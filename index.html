@@ -268,6 +268,7 @@ tbody tr:hover{background:#f7f9fc}
     <div class="bosluk"></div>
     <div class="kullanici">
       <span class="mini" id="hKullanici" style="color:rgba(255,255,255,.75)"></span>
+      <button class="cikis hide" id="kurBtn" title="Uygulamayı masaüstüne kur">Masaüstüne kur</button>
       <button class="cikis" id="yenileBtn">Yenile</button>
       <button class="cikis" id="cikisBtn">Çıkış</button>
     </div>
@@ -463,11 +464,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '1.8';
+const SURUM = '1.9';
 const SURUM_TARIH = '2026-09-02';
 const SURUM_NOTU = 'Gidiş+dönüş ayrı rota · günlük devamsızlık · otomatik yakıt fiyatı · hava durumu payı · '
                  + 'anahtarsız harita katmanları · adresten otomatik dolan harita araması · '
-                 + 'sunucudan yayın ve otomatik güncelleme bildirimi · tek hesapla giriş';
+                 + 'sunucudan yayın ve otomatik güncelleme bildirimi · tek hesapla giriş · masaüstüne kurulabilir';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -1989,9 +1990,33 @@ setInterval(surumKontrol, 15*60*1000);
 window.addEventListener('focus', () => { guncellemeBildirildi || surumKontrol(); });
 setTimeout(surumKontrol, 8000);
 
+/* ================= MASAÜSTÜNE KURULUM ================= */
 /* PWA manifesti ve ikonlar ayrı dosyalarda (manifest.json, icon-*.png).
-   Yerelden açıldığında bulunamaz, sorun değil; sunucudan açıldığında
-   Chrome "Uygulamayı yükle" seçeneğini gösterir. */
+   Chrome'un "Uygulamayı yükle" seçeneğini göstermesi için service worker da
+   gerekiyor; yalnızca https adresinden açıldığında kaydediliyor. */
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+/* Chrome kurulabilir bulduğunda kendi düğmemizi gösterelim */
+let kurulumOlayi = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); kurulumOlayi = e;
+  const b = $('#kurBtn'); if(b) b.classList.remove('hide');
+});
+window.addEventListener('appinstalled', () => {
+  kurulumOlayi = null;
+  const b = $('#kurBtn'); if(b) b.classList.add('hide');
+});
+document.addEventListener('click', async e => {
+  if(e.target && e.target.id === 'kurBtn' && kurulumOlayi){
+    kurulumOlayi.prompt();
+    await kurulumOlayi.userChoice;
+    kurulumOlayi = null;
+    e.target.classList.add('hide');
+  }
+});
 
 /* ilk açılış + oturum değişimlerini izle */
 if(sb) sb.auth.onAuthStateChange((olay) => {
