@@ -193,6 +193,8 @@ tbody tr:hover{background:#f7f9fc}
   padding:2px 6px;white-space:nowrap
 }
 .leaflet-tooltip.igne-etiket:before{display:none}
+/* uzaktan bakarken isimler üst üste binmesin */
+.harita.etiket-gizli .leaflet-tooltip.igne-etiket{display:none}
 @media(max-width:640px){
   .harita.buyuk{height:calc(100vh - 210px);min-height:380px}
   .harita-lejant{left:10px;right:10px;bottom:10px;max-width:none}
@@ -373,7 +375,7 @@ tbody tr:hover{background:#f7f9fc}
           <option value="gidis">Sabah — gidiş</option>
           <option value="donus">Akşam — dönüş</option>
         </select>
-        <label class="mini satir" style="gap:6px"><input type="checkbox" id="isimGoster" checked> İsimler</label>
+        <label class="mini satir" style="gap:6px" title="İsimler yakınlaşınca görünür"><input type="checkbox" id="isimGoster" checked> İsimler</label>
         <label class="mini satir" style="gap:6px"><input type="checkbox" id="rotaGoster" checked> Güzergahlar</label>
         <button class="btn ikincil kucuk" id="tamEkranBtn">Tam ekran</button>
       </div>
@@ -501,12 +503,12 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.0';
+const SURUM = '2.1';
 const SURUM_TARIH = '2026-09-02';
 const SURUM_NOTU = 'Gidiş+dönüş ayrı rota · günlük devamsızlık · otomatik yakıt fiyatı · hava durumu payı · '
                  + 'anahtarsız harita katmanları · adresten otomatik dolan harita araması · '
                  + 'sunucudan yayın · tek hesapla giriş · masaüstüne kurulabilir · '
-                 + 'büyük harita, isim etiketleri, araç lejantı ve tam ekran';
+                 + 'büyük harita, araç lejantı, tam ekran; isimler yakınlaşınca görünür';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -1755,7 +1757,10 @@ function aracRenkleri(){
 
 function anaHaritaCiz(){
   const a = D.ayarlar;
-  if(!anaH) anaH = haritaKur('anaHarita', [a.fabrika_lat||37.87, a.fabrika_lng||32.49], 12).m;
+  if(!anaH){
+    anaH = haritaKur('anaHarita', [a.fabrika_lat||37.87, a.fabrika_lng||32.49], 12).m;
+    if(anaH && anaH.on) anaH.on('zoomend', etiketGorunurluk);
+  }
   if(!anaH) return;
   if(anaKatman) anaH.removeLayer(anaKatman);
   anaKatman = L.layerGroup().addTo(anaH);
@@ -1838,7 +1843,18 @@ function anaHaritaCiz(){
 
   lejantCiz(lejant, yon);
   if(sinir.length > 1) anaH.fitBounds(sinir, {padding:[45,45]});
-  setTimeout(() => anaH.invalidateSize(), 120);
+  etiketGorunurluk();
+  setTimeout(() => { anaH.invalidateSize(); etiketGorunurluk(); }, 120);
+}
+
+/* İsimler yalnızca yeterince yakınlaşınca görünsün; uzakta üst üste biniyorlar. */
+const ETIKET_ZOOM = 13;
+function etiketGorunurluk(){
+  const el = document.getElementById('anaHarita');
+  if(!el || !anaH || !anaH.getZoom) return;
+  try{
+    el.classList.toggle('etiket-gizli', anaH.getZoom() < ETIKET_ZOOM);
+  }catch(e){}
 }
 
 function lejantCiz(liste, yon){
@@ -2098,11 +2114,14 @@ async function surumKontrol(){
 function guncellemeBandi(j){
   const d = document.createElement('div');
   d.className = 'guncelleme-bandi';
+  const adres = j.adres || 'https://ucelhabib.github.io/ucel-servis/';
   d.innerHTML = `<b>Yeni sürüm v${esc(j.surum)} yayınlandı</b>
     <span class="mini">${esc(j.not || '')}</span>
     <div class="bosluk"></div>` + (SUNUCUDA
       ? `<button class="btn vurgu kucuk" id="guncelleBtn">Şimdi güncelle</button>`
-      : `<span class="mini">Yeni dosyayı indirmen gerekiyor</span>`)
+      : `<span class="mini">Bu bilgisayardaki eski dosyayı açtın —
+           güncel sürüm için adresi kullan:</span>
+         <a class="btn vurgu kucuk" href="${esc(adres)}" target="_blank" rel="noopener">Adresi aç</a>`)
     + `<button class="kapat" onclick="this.parentNode.remove()">&times;</button>`;
   document.body.appendChild(d);
   const b = $('#guncelleBtn');
