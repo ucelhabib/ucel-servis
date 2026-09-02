@@ -425,6 +425,16 @@ tbody tr:hover{background:#f7f9fc}
             <div class="alan" style="flex:1"><label>Serviste max süre (dk)</label><input id="aMax" type="number"></div>
             <div class="alan" style="flex:1"><label>Aylık çalışma günü</label><input id="aGun" type="number"></div>
           </div>
+          <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+            <div class="alan"><label>Zaman ağırlığı (₺ / kişi-dakika)</label>
+              <input id="aDakika" type="number" step="0.25" min="0"></div>
+            <p class="mini" style="margin-top:-6px">Program karar verirken üç şeyi birlikte tartar:
+            <b>yakıt + bakım/aşınma + personelin serviste geçirdiği zaman</b>.
+            Bu alan zamanın ağırlığını belirler.<br>
+            <b>0</b> = zamanı hiç sayma, en ucuz yakıt kazanır (uzun yolculuklar çıkar).<br>
+            <b>1 ₺</b> = dengeli. Bir kişiyi 10 dk fazla gezdirmek 10 ₺ gibi görünür.<br>
+            <b>3 ₺ ve üstü</b> = konfor öne geçer, maliyet artar.</p>
+          </div>
         </div>
         <div class="kart">
           <h3>Yakıt fiyatları</h3>
@@ -510,12 +520,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.3';
+const SURUM = '2.5';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Gidiş+dönüş ayrı rota · günlük devamsızlık · otomatik yakıt fiyatı · hava durumu payı · '
-                 + 'anahtarsız harita katmanları · adresten otomatik dolan harita araması · '
-                 + 'sunucudan yayın · tek hesapla giriş · masaüstüne kurulabilir · '
-                 + 'koordinat doğrulama ve Google yapıştırma; harita çökse bile form çalışır';
+const SURUM_NOTU = 'Yeni karar ölçütü: mesafe + zaman + ekonomi birlikte. '
+                 + 'Araç başına bakım/aşınma payı (₺/km) ve ayarlanabilir zaman ağırlığı (₺/kişi-dk). '
+                 + 'Süre limiti artık şoförler için de geçerli. Maliyet dökümü ekranda: yakıt / bakım / zaman.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -1260,11 +1269,19 @@ $('#tumunuCozBtn').addEventListener('click', async () => {
 $('#personelEkleBtn').addEventListener('click', () => personelDuzenle(null));
 
 /* ================= ARAÇLAR ================= */
-function kmMaliyet(v){
+/* Bir aracın kilometre maliyeti iki parçadan oluşur:
+   yakıt (güncel pompa fiyatından) + bakım/aşınma (lastik, servis, fren, amortisman).
+   Optimizasyon ikisinin toplamını kullanır; ekranda ayrı ayrı gösterilir. */
+function yakitKm(v){
   const a = D.ayarlar;
   const f = {dizel:a.fiyat_dizel, benzin:a.fiyat_benzin, otogaz:a.fiyat_otogaz, elektrik:a.fiyat_elektrik}[v.yakit];
   return (Number(v.tuketim_100km)||0)/100 * (Number(f)||0);
 }
+function bakimKm(v){ return Number(v.bakim_km_maliyet)||0; }
+function kmMaliyet(v){ return yakitKm(v) + bakimKm(v); }
+/* Bir personelin serviste geçirdiği dakikanın ₺ karşılığı (konfor ağırlığı).
+   0 girilirse program yalnızca paraya bakar — eski davranış. */
+function dakikaDegeri(){ const d = Number(D.ayarlar.dakika_degeri); return Number.isFinite(d) && d >= 0 ? d : 0; }
 function cizAraclar(){
   $('#aracListe').innerHTML = D.araclar.map(v => {
     const s = kisi(v.sofor_id);
@@ -1281,7 +1298,10 @@ function cizAraclar(){
       <div class="izgara i3" style="gap:8px">
         <div><div class="mini">Kapasite</div><b>${v.kapasite} yolcu</b></div>
         <div><div class="mini">Tüketim</div><b>${sy(v.tuketim_100km)} ${YAKIT_BIRIM[v.yakit]}/100km</b></div>
-        <div><div class="mini">Km maliyeti</div><b>${kmMaliyet(v)?tl(kmMaliyet(v)):'—'}</b></div>
+        <div><div class="mini">Toplam km maliyeti</div><b>${kmMaliyet(v)?tl(kmMaliyet(v)):'—'}</b></div>
+      </div>
+      <div class="mini" style="margin-top:6px">
+        yakıt ${yakitKm(v)?tl(yakitKm(v)):'—'}/km + bakım-aşınma ${tl(bakimKm(v))}/km
       </div>
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)" class="mini">
         Şoför: <b>${esc(s?s.ad_soyad:'atanmadı')}</b>
@@ -1310,6 +1330,11 @@ function aracDuzenle(id){
       <div class="alan" style="flex:1"><label>Kapasite (şoför hariç yolcu)</label><input id="vKap" type="number" value="${v.kapasite}"></div>
       <div class="alan" style="flex:1"><label>Tüketim (L veya kWh /100km)</label><input id="vTuk" type="number" step="0.1" value="${v.tuketim_100km}"></div>
     </div>
+    <div class="alan"><label>Bakım / aşınma payı (₺ / km)</label>
+      <input id="vBakim" type="number" step="0.05" min="0" value="${v.bakim_km_maliyet ?? 0}">
+      <div class="mini" style="margin-top:4px">Yakıt dışı km maliyeti: lastik, periyodik bakım, fren-debriyaj,
+      amortisman. Servis faturalarından kendi rakamını girebilirsin — başlangıç değerleri tahminidir.</div>
+    </div>
     <div class="alan"><label>Şoför</label><select id="vSofor">
       <option value="">— atanmadı —</option>
       ${soforler.map(p=>`<option value="${p.id}"${v.sofor_id===p.id?' selected':''}>${esc(p.ad_soyad)}${p.gorev==='sofor'?'':' (personel)'}</option>`).join('')}
@@ -1325,6 +1350,7 @@ function aracDuzenle(id){
           plaka:$('#vPlaka').value.trim().toUpperCase(), marka:$('#vMarka').value.trim(),
           model:$('#vModel').value.trim(), yakit:$('#vYakit').value,
           kapasite:parseInt($('#vKap').value)||0, tuketim_100km:parseFloat($('#vTuk').value)||0,
+          bakim_km_maliyet:Math.max(0, parseFloat($('#vBakim').value)||0),
           sofor_id:$('#vSofor').value || null, notlar:$('#vNot').value.trim()||null,
           aktif:$('#vAktif').checked
         };
@@ -1367,52 +1393,72 @@ function olc(yol, ix, M, S, bekleme, carpan){
   }
   return {km, dk, bacakM, bacakDk, yol};
 }
-/* yolcunun araçta geçirdiği süre — gidişte binişten fabrikaya, dönüşte fabrikadan inişe */
+/* Araçtaki HERKESİN (şoför dahil) yolculuk süresi — gidişte binişten fabrikaya,
+   dönüşte fabrikadan inişe. Şoför de bu servisde vakit harcıyor; hem süre
+   limitine hem maliyete o da dahil. */
 function yolcuSureleri(o, yon){
   const s = [];
-  for(let k=1;k<o.yol.length-1;k++){
+  for(let k=0;k<o.yol.length;k++){
+    if(o.yol[k] === 'F') continue;
     let t = 0;
     if(yon === 'donus'){ for(let j=0;j<k;j++) t += o.bacakDk[j]; }
     else               { for(let j=k;j<o.bacakDk.length;j++) t += o.bacakDk[j]; }
-    s.push({id:o.yol[k], dk:t});
+    s.push({id:o.yol[k], dk:t, sofor: k===0 || k===o.yol.length-1});
   }
   return s;
 }
-/* uçları sabit 2-opt */
-function ikiOpt(yol, ix, M, S, bekleme, carpan){
-  if(yol.length < 5) return yol;
-  let en = yol.slice(), enKm = olc(en, ix, M, S, bekleme, carpan).km, gelisti = true, tur = 0;
+/* Bir rotanın toplam bedeli: yol maliyeti (yakıt+bakım) + içindekilerin zamanı.
+   Optimizasyonun her adımı bu tek sayıyı düşürmeye çalışır — mesafe, zaman ve
+   ekonomi ayrı ayrı değil, birlikte tartılır. */
+function rotaBedeli(yol, birim, yon, ix, M, S, bekleme, carpan, dkDeger){
+  const o = olc(yol, ix, M, S, bekleme, carpan);
+  if(!o) return null;
+  const dk = yolcuSureleri(o, yon).reduce((s,x) => s + x.dk, 0);
+  return { o, dk, bedel: o.km * birim + dk * dkDeger };
+}
+/* uçları sabit 2-opt — ölçüt km değil, toplam bedel */
+function ikiOpt(yol, birim, yon, ix, M, S, bekleme, carpan, dkDeger){
+  if(yol.length < 4) return yol;
+  let en = yol.slice();
+  const b0 = rotaBedeli(en, birim, yon, ix, M, S, bekleme, carpan, dkDeger);
+  if(!b0) return yol;
+  let enB = b0.bedel, gelisti = true, tur = 0;
   while(gelisti && tur++ < 50){
     gelisti = false;
     for(let i=1;i<en.length-2;i++){
       for(let j=i+1;j<en.length-1;j++){
         const y = en.slice(0,i).concat(en.slice(i,j+1).reverse(), en.slice(j+1));
-        const o = olc(y, ix, M, S, bekleme, carpan);
-        if(o && o.km < enKm - 1e-9){ en = y; enKm = o.km; gelisti = true; }
+        const b = rotaBedeli(y, birim, yon, ix, M, S, bekleme, carpan, dkDeger);
+        if(b && b.bedel < enB - 1e-9){ en = y; enB = b.bedel; gelisti = true; }
       }
     }
   }
   return en;
 }
-/* bir araç kümesi + yolcu listesi için tek yönün rotalarını kur */
+/* bir araç kümesi + yolcu listesi için tek yönün rotalarını kur.
+   Kişi yerleştirirken bakılan artış = yol maliyeti artışı + araçtakilerin
+   toplam bekleme/yolculuk süresindeki artışın parasal karşılığı. Böylece
+   birini uzak bir sapmaya sokmak, ucuz araçta bile "bedava" görünmez. */
 function rotaKur(alt, yolcuIdler, yon, ix, M, S, bekleme, carpan, maxDk){
+  const dkDeger = dakikaDegeri();
   const rotalar = alt.map(v => ({
     v, birim: kmMaliyet(v),
     yol: yon === 'gidis' ? [v.sofor_id, 'F'] : ['F', v.sofor_id]
   }));
   const kalan = yolcuIdler.slice();
+
   while(kalan.length){
     let en = null;
     for(const kid of kalan){
       for(const r of rotalar){
         if(r.yol.length - 2 >= r.v.kapasite) continue;
-        const mevcut = olc(r.yol, ix, M, S, bekleme, carpan);
+        const mevcut = rotaBedeli(r.yol, r.birim, yon, ix, M, S, bekleme, carpan, dkDeger);
         if(!mevcut) continue;
         for(let pos=1; pos <= r.yol.length-1; pos++){
           const y = r.yol.slice(0,pos).concat([kid], r.yol.slice(pos));
-          const o = olc(y, ix, M, S, bekleme, carpan);
-          if(!o) continue;
-          const artis = (o.km - mevcut.km) * r.birim;
+          const b = rotaBedeli(y, r.birim, yon, ix, M, S, bekleme, carpan, dkDeger);
+          if(!b) continue;
+          const artis = b.bedel - mevcut.bedel;
           if(!en || artis < en.artis) en = {artis, r, y, kid};
         }
       }
@@ -1421,20 +1467,26 @@ function rotaKur(alt, yolcuIdler, yon, ix, M, S, bekleme, carpan, maxDk){
     en.r.yol = en.y;
     kalan.splice(kalan.indexOf(en.kid), 1);
   }
-  let km = 0, maliyet = 0, uygun = true, enUzun = 0;
+  let km = 0, maliyet = 0, yakit = 0, bakim = 0, dakika = 0, uygun = true, enUzun = 0;
   const detay = [];
   for(const r of rotalar){
-    r.yol = ikiOpt(r.yol, ix, M, S, bekleme, carpan);
+    r.yol = ikiOpt(r.yol, r.birim, yon, ix, M, S, bekleme, carpan, dkDeger);
     const o = olc(r.yol, ix, M, S, bekleme, carpan);
     if(!o) return null;
     const sur = yolcuSureleri(o, yon);
     const uzun = sur.length ? Math.max(...sur.map(x => x.dk)) : 0;
     enUzun = Math.max(enUzun, uzun);
     if(uzun > maxDk) uygun = false;
-    km += o.km; maliyet += o.km * r.birim;
+    km += o.km;
+    yakit  += o.km * yakitKm(r.v);
+    bakim  += o.km * bakimKm(r.v);
+    dakika += sur.reduce((s,x) => s + x.dk, 0);
+    maliyet += o.km * r.birim;
     detay.push({v:r.v, yon, o, sur});
   }
-  return {detay, km, maliyet, uygun, enUzun};
+  return {detay, km, maliyet, yakit, bakim, dakika,
+          zaman: dakika * dkDeger, bedel: maliyet + dakika * dkDeger,
+          uygun, enUzun};
 }
 
 /* ---- hava durumu: Open-Meteo, ücretsiz ve anahtarsız ---- */
@@ -1623,9 +1675,12 @@ async function optimizeEt(){
       const don = rotaKur(alt, dYolcu, 'donus', ix, M, S, bekleme, carpan, maxDk);
       if(!gid || !don) continue;
 
-      const gunluk = gid.maliyet + don.maliyet;
+      const gunluk = gid.maliyet + don.maliyet;              // yakıt + bakım (cebe giren)
+      const bedel  = gid.bedel   + don.bedel;                // + personel zamanı (karar ölçütü)
       const aday = {
-        maske, gid, don, gunluk, aylik: gunluk*gun,
+        maske, gid, don, gunluk, aylik: gunluk*gun, bedel, bedelAylik: bedel*gun,
+        yakit: gid.yakit + don.yakit, bakim: gid.bakim + don.bakim,
+        dakika: gid.dakika + don.dakika, zaman: gid.zaman + don.zaman,
         uygun: gid.uygun && don.uygun,
         enUzun: Math.max(gid.enUzun, don.enUzun),
         aracSayisi: alt.length, km: gid.km + don.km
@@ -1633,11 +1688,11 @@ async function optimizeEt(){
       if(!enIyi) enIyi = aday;
       else{
         const daha = (aday.uygun && !enIyi.uygun) ||
-                     (aday.uygun === enIyi.uygun && aday.aylik < enIyi.aylik - 0.001);
+                     (aday.uygun === enIyi.uygun && aday.bedel < enIyi.bedel - 0.001);
         if(daha) enIyi = aday;
       }
-      // süre kısıtı olmasaydı en ucuzu hangisiydi?
-      if(!enUcuz || aday.aylik < enUcuz.aylik - 0.001) enUcuz = aday;
+      // süre kısıtı olmasaydı en iyisi hangisiydi?
+      if(!enUcuz || aday.bedel < enUcuz.bedel - 0.001) enUcuz = aday;
     }
     if(!enIyi) throw new Error('Kapasiteye sığan bir kombinasyon bulunamadı. Araç kapasitelerini kontrol et.');
 
@@ -1653,12 +1708,14 @@ async function optimizeEt(){
       enIyi.uygun
         ? `Hesaplandı. <b>${enIyi.aracSayisi} araç</b> · gidiş+dönüş <b>${sy(enIyi.km,1)} km</b> · aylık <b>${tl(enIyi.aylik)}</b> · en uzun yolculuk ${dkFormat(enIyi.enUzun)} (limit ${maxDk} dk).`
         : `Hesaplandı ama <b>süre limiti aşılıyor</b>: en uzun yolculuk ${dkFormat(enIyi.enUzun)}, limit ${maxDk} dk. Limiti Ayarlar'dan artırabilir ya da araç ekleyebilirsin.`,
+      `Aylık dökümü: yakıt <b>${tl(enIyi.yakit*gun)}</b> + bakım/aşınma <b>${tl(enIyi.bakim*gun)}</b> = <b>${tl(enIyi.aylik)}</b>.
+       Personel serviste günde <b>${sy(enIyi.dakika,0)} kişi-dakika</b> geçiriyor${dakikaDegeri()?` (karar ölçütünde ${tl(enIyi.zaman*gun)}/ay ağırlığında)`:' (zaman ağırlığı 0 — hesaba katılmıyor)'}.`,
       hava ? `Hava: sabah ${havaG.not}${havaG.dk?` (+${havaG.dk} dk pay)`:''} · akşam ${havaD.not}${havaD.dk?` (+${havaD.dk} dk pay)`:''}` : '',
       a.zirve_pay_yuzde ? `Zirve saat payı %${a.zirve_pay_yuzde} uygulandı.` : '',
-      (enUcuz && enUcuz !== enIyi && enUcuz.aylik < enIyi.aylik - 1)
+      (enUcuz && enUcuz !== enIyi && enUcuz.bedel < enIyi.bedel - 1)
         ? `<b>Tasarruf fırsatı:</b> süre limitini ${Math.ceil(enUcuz.enUzun)} dk yaparsan
-           ${enUcuz.detay ? '' : ''}${enUcuz.aracSayisi} araçla aylık <b>${tl(enIyi.aylik - enUcuz.aylik)}</b>
-           daha ucuza iner (${tl(enUcuz.aylik)}). Şu anki limit ${maxDk} dk bu seçeneği eliyor.` : '',
+           ${enUcuz.aracSayisi} araçla aylık cep maliyeti <b>${tl(enUcuz.aylik)}</b> olurdu
+           (bugünkü ${tl(enIyi.aylik)}). Şu anki limit ${maxDk} dk bu seçeneği eliyor.` : '',
       disarida.length ? `Bu tarihte serviste olmayan: ${disarida.map(p=>esc(p.ad_soyad)).join(', ')}` : '',
       eksik.length ? `Konumu olmadığı için hesaba katılmayan: ${eksik.map(p=>esc(p.ad_soyad)).join(', ')}` : ''
     ].filter(Boolean).join('<br>'));
@@ -1697,6 +1754,10 @@ async function rotalariKaydet(sonuc, tarih, gun, z){
         pay_dk: y.hava.dk, hava_notu: y.hava.not,
         gunluk_maliyet: +(d.o.km*kmMaliyet(d.v)).toFixed(2),
         aylik_maliyet: +(d.o.km*kmMaliyet(d.v)*gun).toFixed(2),
+        yakit_maliyet: +(d.o.km*yakitKm(d.v)).toFixed(2),
+        bakim_maliyet: +(d.o.km*bakimKm(d.v)).toFixed(2),
+        kisi_dakika:   +d.sur.reduce((s,x)=>s+x.dk,0).toFixed(1),
+        zaman_maliyet: +(d.sur.reduce((s,x)=>s+x.dk,0)*dakikaDegeri()).toFixed(2),
         ilk_binis_saat: kalkis+':00', varis_saat: varis+':00',
         geometri: geo ? JSON.stringify(geo) : null,
         hesaplama_tarihi: new Date().toISOString()
@@ -1742,9 +1803,16 @@ function cizRotalar(){
     <div class="kutu"><div class="et">Günlük mesafe</div><div class="dg">${sy(toplamKm,1)}<span class="bir">km</span></div>
       <div class="not">gidiş + dönüş toplamı</div></div>
     <div class="kutu"><div class="et">Günlük maliyet</div><div class="dg">${tl(D.rotalar.reduce((s,r)=>s+Number(r.gunluk_maliyet||0),0))}</div>
-      <div class="not">${pay?`hava payı +${pay} dk`:'ek pay yok'}</div></div>
+      <div class="not">yakıt ${tl(D.rotalar.reduce((s,r)=>s+Number(r.yakit_maliyet||0),0))}
+        + bakım ${tl(D.rotalar.reduce((s,r)=>s+Number(r.bakim_maliyet||0),0))}</div></div>
     <div class="kutu vurgulu"><div class="et">Aylık maliyet</div><div class="dg">${tl(toplamAy)}</div>
-      <div class="not">${D.ayarlar.calisma_gunu_sayisi||22} iş günü</div></div>
+      <div class="not">${D.ayarlar.calisma_gunu_sayisi||22} iş günü${pay?` · hava payı +${pay} dk`:''}</div></div>
+  </div>
+  <div class="mini" style="margin:-8px 0 16px">
+    Personel serviste günde toplam
+    <b>${sy(D.rotalar.reduce((s,r)=>s+Number(r.kisi_dakika||0),0),0)} kişi-dakika</b> geçiriyor
+    (şoförler dahil). Karar ölçütündeki zaman ağırlığı:
+    <b>${tl(Number(D.ayarlar.dakika_degeri)||0)}/kişi-dakika</b>${Number(D.ayarlar.dakika_degeri)?'':' — zaman hesaba katılmıyor'}.
   </div>`;
 
   const renkAnahtari = {};
@@ -2170,6 +2238,7 @@ function cizAyarlar(){
   $('#aBas').value = (a.mesai_baslangic||'08:00').slice(0,5);
   $('#aBit').value = (a.mesai_bitis||'18:00').slice(0,5);
   $('#aMax').value = a.max_servis_dk; $('#aGun').value = a.calisma_gunu_sayisi;
+  $('#aDakika').value = a.dakika_degeri ?? 1;
   $('#aDizel').value = a.fiyat_dizel; $('#aBenzin').value = a.fiyat_benzin;
   $('#aOtogaz').value = a.fiyat_otogaz; $('#aElektrik').value = a.fiyat_elektrik;
   $('#fiyatGuncelleme').innerHTML = (a.fiyat_guncelleme
@@ -2198,6 +2267,7 @@ $('#ayarKaydet').addEventListener('click', async () => {
     fabrika_lat:parseFloat($('#aLat').value), fabrika_lng:parseFloat($('#aLng').value),
     mesai_baslangic:$('#aBas').value, mesai_bitis:$('#aBit').value,
     max_servis_dk:parseInt($('#aMax').value)||45, calisma_gunu_sayisi:parseInt($('#aGun').value)||22,
+    dakika_degeri:Math.max(0, parseFloat($('#aDakika').value)||0),
     fiyat_dizel:parseFloat($('#aDizel').value)||0, fiyat_benzin:parseFloat($('#aBenzin').value)||0,
     fiyat_otogaz:parseFloat($('#aOtogaz').value)||0, fiyat_elektrik:parseFloat($('#aElektrik').value)||0,
     zirve_pay_yuzde:parseInt($('#aZirve').value)||0, hava_otomatik:$('#aHava').checked,
