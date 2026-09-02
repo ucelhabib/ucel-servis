@@ -1,7 +1,7 @@
 /* ÜÇEL Personel Servisi — service worker
    Amaç: uygulamanın masaüstüne/telefona kurulabilmesi ve internet yokken
    en azından açılabilmesi. Veri istekleri ASLA önbelleğe alınmaz. */
-const SURUM = 'ucel-servis-v2.2';
+const SURUM = 'ucel-servis-v2.3';
 const VARLIKLAR = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

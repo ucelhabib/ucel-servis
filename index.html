@@ -510,12 +510,12 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.2';
+const SURUM = '2.3';
 const SURUM_TARIH = '2026-09-02';
 const SURUM_NOTU = 'Gidiş+dönüş ayrı rota · günlük devamsızlık · otomatik yakıt fiyatı · hava durumu payı · '
                  + 'anahtarsız harita katmanları · adresten otomatik dolan harita araması · '
                  + 'sunucudan yayın · tek hesapla giriş · masaüstüne kurulabilir · '
-                 + 'harita çökse bile form çalışır; hatalar artık ekranda görünüyor';
+                 + 'koordinat doğrulama ve Google yapıştırma; harita çökse bile form çalışır';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -965,10 +965,20 @@ function personelDuzenle(id){
     <div class="harita-sar" id="pHaritaSar" style="padding:0;border:0;box-shadow:none">
       <div id="pHarita" class="harita orta"></div>
     </div>
-    <div class="satir" style="margin-top:8px">
-      <div class="alan" style="flex:1;margin:0"><label>Enlem</label><input id="pLat" type="number" step="0.000001" value="${p.lat??''}"></div>
-      <div class="alan" style="flex:1;margin:0"><label>Boylam</label><input id="pLng" type="number" step="0.000001" value="${p.lng??''}"></div>
+    <div class="alan" style="margin-top:10px"><label>Google Maps'ten koordinat yapıştır</label>
+      <div class="satir" style="gap:6px">
+        <input id="pYapistir" placeholder="37.845413, 32.518076" style="flex:1">
+        <button class="btn ikincil" id="pYapistirBtn" type="button">Uygula</button>
+      </div>
+      <p class="mini" style="margin:5px 0 0">Google Maps'te kapıya sağ tıkla, en üstteki koordinata tıkla (kopyalanır), buraya yapıştır. Virgüllü yazım da kabul edilir.</p>
     </div>
+    <div class="satir" style="margin-top:8px">
+      <div class="alan" style="flex:1;margin:0"><label>Enlem</label>
+        <input id="pLat" inputmode="decimal" value="${p.lat??''}"></div>
+      <div class="alan" style="flex:1;margin:0"><label>Boylam</label>
+        <input id="pLng" inputmode="decimal" value="${p.lng??''}"></div>
+    </div>
+    <div class="mini" id="pKoordDurum" style="margin-top:5px"></div>
     <div class="satir" style="margin-top:12px">
       <label class="mini satir" style="gap:6px"><input type="checkbox" id="pServis" ${p.servis_kullaniyor!==false?'checked':''}> Servis kullanıyor</label>
       <label class="mini satir" style="gap:6px"><input type="checkbox" id="pAktif" ${p.aktif!==false?'checked':''}> Aktif</label>
@@ -984,12 +994,23 @@ function personelDuzenle(id){
           telefon: $('#pTel').value.trim() || null, il:'Konya',
           ilce: $('#pIlce').value.trim(), mahalle: $('#pMah').value.trim(),
           adres: $('#pAdres').value.trim(),
-          lat: parseFloat($('#pLat').value) || null, lng: parseFloat($('#pLng').value) || null,
+          lat: koordinatOku($('#pLat').value), lng: koordinatOku($('#pLng').value),
           baslangic_tarih: $('#pBas').value || null, ayrilis_tarih: $('#pAyril').value || null,
           servis_kullaniyor: $('#pServis').checked, aktif: $('#pAktif').checked,
           konum_dogrulandi: $('#pOnay').checked
         };
         if(!kayit.ad_soyad){ alert('Ad soyad gerekli'); return false; }
+        if((kayit.lat !== null && !enlemGecerli(kayit.lat)) ||
+           (kayit.lng !== null && !boylamGecerli(kayit.lng))){
+          alert('Koordinat geçersiz.\n\nEnlem −90 ile 90, boylam −180 ile 180 arasında olmalı.\n'
+              + 'Ondalık ayıracı nokta kullan: 37.845413 / 32.518076\n\n'
+              + 'Google Maps\'ten kopyaladıysan "Google Maps\'ten koordinat yapıştır" kutusunu kullan.');
+          return false;
+        }
+        if((kayit.lat === null) !== (kayit.lng === null)){
+          alert('Enlem ve boylamın ikisi de dolu ya da ikisi de boş olmalı.');
+          return false;
+        }
         kayit.guncelleme = new Date().toISOString();
         const r = id ? await sb.from('personel').update(kayit).eq('id', id)
                      : await sb.from('personel').insert(kayit);
@@ -1005,6 +1026,13 @@ function personelDuzenle(id){
 
     const yaz = c => { $('#pLat').value = c.lat.toFixed(6); $('#pLng').value = c.lng.toFixed(6); };
     const koy = (lat, lng, zoom) => {
+      // GEÇERSİZ KOORDİNATI ASLA HARİTAYA VERME — donmanın sebebi buydu
+      if(!enlemGecerli(lat) || !boylamGecerli(lng)){
+        $('#pKoordDurum').innerHTML =
+          '<span style="color:var(--err)">Koordinat geçersiz (enlem −90…90, boylam −180…180 olmalı).</span>';
+        return;
+      }
+      $('#pKoordDurum').textContent = '';
       yaz({lat, lng});
       if(!harita) return;                       // harita yoksa sadece koordinatı yaz
       try{
@@ -1014,6 +1042,26 @@ function personelDuzenle(id){
         if(zoom) harita.setView([lat,lng], zoom);
       }catch(e){ console.error('iğne konulamadı', e); }
     };
+    /* Google'dan yapıştırma */
+    const yapistirUygula = () => {
+      const c = koordinatCiftiOku($('#pYapistir').value);
+      if(!c){ $('#pKoordDurum').innerHTML =
+        '<span style="color:var(--err)">Okunamadı. Örnek: <b>37.845413, 32.518076</b></span>'; return; }
+      koy(c[0], c[1], 18);
+      $('#pKoordDurum').innerHTML = 'Koordinat uygulandı.';
+      $('#pYapistir').value = '';
+    };
+    $('#pYapistirBtn').onclick = yapistirUygula;
+    $('#pYapistir').addEventListener('keydown', e => {
+      if(e.key === 'Enter'){ e.preventDefault(); yapistirUygula(); } });
+    /* elle yazılan enlem/boylam anında doğrulansın */
+    ['#pLat','#pLng'].forEach(s => $(s).addEventListener('change', () => {
+      const la = koordinatOku($('#pLat').value), lo = koordinatOku($('#pLng').value);
+      if(la === null && lo === null){ $('#pKoordDurum').textContent = ''; return; }
+      if(enlemGecerli(la) && boylamGecerli(lo)) koy(la, lo, 18);
+      else $('#pKoordDurum').innerHTML =
+        '<span style="color:var(--err)">Koordinat geçersiz — ondalık ayıracı nokta olmalı (37.845413).</span>';
+    }));
 
     /* --- arama kutusu: adres alanlarından otomatik dolar --- */
     let elleYazildi = false;
@@ -1058,13 +1106,17 @@ function personelDuzenle(id){
 
     /* --- harita: çökerse forma dokunmasın --- */
     try{
-      const sonuc = haritaKur('pHarita', [p.lat||37.8746, p.lng||32.4932], p.lat?18:12, 'uydu');
+      const gLat = enlemGecerli(p.lat)  ? p.lat : null;
+      const gLng = boylamGecerli(p.lng) ? p.lng : null;
+      if(p.lat != null && gLat === null) $('#pKoordDurum').innerHTML =
+        '<span style="color:var(--err)">Kayıtlı koordinat geçersizdi, haritada gösterilmedi. Yeniden işaretle.</span>';
+      const sonuc = haritaKur('pHarita', [gLat ?? 37.8746, gLng ?? 32.4932], gLat ? 18 : 12, 'uydu');
       harita = sonuc && sonuc.m;
       if(harita){
         $('#pTamEkran').onclick = () => tamEkranAc('pHaritaSar', harita);
         L.marker([D.ayarlar.fabrika_lat, D.ayarlar.fabrika_lng], {opacity:.7})
           .addTo(harita).bindPopup('Fabrika');
-        if(p.lat) koy(p.lat, p.lng);
+        if(gLat !== null && gLng !== null) koy(gLat, gLng);
         harita.on('click', e => koy(e.latlng.lat, e.latlng.lng));
         setTimeout(() => { try{ harita.invalidateSize(); }catch(e){} }, 150);
       }
@@ -1123,6 +1175,44 @@ async function nominatim(q){
     return j && j[0] ? {lat:parseFloat(j[0].lat), lng:parseFloat(j[0].lon), ad:j[0].display_name} : null;
   }catch(e){ return null; }
 }
+/* ---- koordinat okuma ve doğrulama ----
+   Türkçe klavyede ondalık ayıracı virgül; "32,518076" gibi bir değer sayı alanına
+   girildiğinde virgül düşüp 32518076 oluyordu ve harita donuyordu. Artık metin
+   olarak okuyup normalleştiriyor, sınır dışındaki değeri reddediyoruz. */
+function koordinatOku(deger){
+  if(deger === null || deger === undefined) return null;
+  let s = String(deger).trim();
+  if(!s) return null;
+  s = s.replace(/[^\d,.\-+]/g, '');
+  // hem nokta hem virgül varsa: son gelen ondalık ayıracıdır
+  if(s.includes(',') && s.includes('.')){
+    s = s.lastIndexOf(',') > s.lastIndexOf('.')
+      ? s.replace(/\./g,'').replace(',', '.')
+      : s.replace(/,/g,'');
+  } else if(s.includes(',')){
+    s = s.replace(',', '.');
+  }
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+const enlemGecerli  = n => n !== null && n >= -90  && n <= 90;
+const boylamGecerli = n => n !== null && n >= -180 && n <= 180;
+/* "37.845413, 32.518076" → [37.845413, 32.518076] */
+function koordinatCiftiOku(metin){
+  let s = String(metin||'').trim();
+  if(!s) return null;
+  // "37.845413, 32.518076" → virgülden sonra boşluk varsa o virgül AYIRAÇTIR, ondalık değil
+  s = s.replace(/,\s+/g, ' ').trim();
+  // ayıraç: noktalı virgül, boşluk, ya da ondalık olmayan virgül
+  let parcalar = s.split(/[;\s]+/).map(x => x.replace(/[,;.]+$/,'')).filter(Boolean);
+  if(parcalar.length === 1) parcalar = s.split(',').map(x=>x.trim()).filter(Boolean);
+  if(parcalar.length === 4) parcalar = [parcalar[0]+'.'+parcalar[1], parcalar[2]+'.'+parcalar[3]];
+  if(parcalar.length !== 2) return null;
+  const a = koordinatOku(parcalar[0]), b = koordinatOku(parcalar[1]);
+  if(!enlemGecerli(a) || !boylamGecerli(b)) return null;
+  return [a, b];
+}
+
 /* "Ereğilmez Sk. Cemre Sitesi A Blok 7/20" → "Ereğilmez Sk."
    Kapı/daire/blok bilgisi harita aramasında işe yaramıyor, sokağı bulanıklaştırıyor. */
 function sokakSadelestir(adres){
@@ -1488,7 +1578,7 @@ async function optimizeEt(){
   const durum = m => mesaj('#optDurum','uyari', m);
   try{
     const tarih = planTarihi();
-    const konumlu = p => p.lat && p.lng;
+    const konumlu = p => enlemGecerli(p.lat) && boylamGecerli(p.lng);
     const gidisKisi = D.personel.filter(p => serviste(p, tarih, 'gidis') && konumlu(p));
     const donusKisi = D.personel.filter(p => serviste(p, tarih, 'donus') && konumlu(p));
     const eksik = D.personel.filter(p => p.aktif && p.servis_kullaniyor && !konumlu(p));
@@ -1856,7 +1946,8 @@ function anaHaritaCiz(){
       }
       dur.forEach((d,j) => {
         if(!d.personel_id) return;
-        const p = kisi(d.personel_id); if(!p || !p.lat) return;
+        const p = kisi(d.personel_id);
+        if(!p || !enlemGecerli(p.lat) || !boylamGecerli(p.lng)) return;
         const sofor = p.id === r.sofor_id;
         const zemin = sofor ? '#f17f0a' : renk;
         const m = L.marker([p.lat,p.lng], {
@@ -1881,7 +1972,8 @@ function anaHaritaCiz(){
   }
 
   // güzergaha girmeyenler
-  D.personel.filter(p => p.aktif && p.lat && !rotaliKisi.has(p.id)).forEach(p => {
+  D.personel.filter(p => p.aktif && enlemGecerli(p.lat) && boylamGecerli(p.lng)
+                        && !rotaliKisi.has(p.id)).forEach(p => {
     const m = L.circleMarker([p.lat,p.lng],
       {radius:8, color:'#5b6a7d', fillColor:'#c3ccd7', fillOpacity:.95, weight:2.5})
       .bindPopup(`<b>${esc(p.ad_soyad)}</b><br>${esc([p.mahalle,p.adres].filter(Boolean).join(' · '))}
