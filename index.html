@@ -161,10 +161,42 @@ tbody tr:hover{background:#f7f9fc}
 .kapat{background:none;border:none;font-size:24px;line-height:1;cursor:pointer;color:var(--ink-3);padding:0 4px}
 
 /* harita */
-.harita{height:420px;border-radius:10px;border:1px solid var(--line);z-index:1}
+.harita{height:420px;border-radius:10px;border:1px solid var(--line);z-index:1;background:#e8eef4}
 .harita.mini{height:230px}
-.harita.orta{height:340px}
+.harita.orta{height:min(58vh,460px);min-height:320px}
+.harita.buyuk{height:calc(100vh - 250px);min-height:440px;border-radius:12px}
 .leaflet-control-layers,.leaflet-bar{border-radius:8px !important;box-shadow:0 2px 8px rgba(0,0,0,.18) !important;border:none !important}
+
+/* harita sarmalayıcı + lejant */
+.harita-sar{position:relative;background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:8px;box-shadow:var(--sh)}
+.harita-sar:fullscreen{padding:0;border-radius:0}
+.harita-sar:fullscreen .harita{height:100vh;border-radius:0;border:0}
+.harita-lejant{
+  position:absolute;left:20px;bottom:20px;z-index:500;background:rgba(255,255,255,.96);
+  border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.16);
+  max-width:260px;font-size:12px;max-height:45%;overflow:auto
+}
+.harita-lejant .baslikcik{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--ink-3);padding:2px 6px 6px}
+.lejant-satir{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:7px;cursor:pointer}
+.lejant-satir:hover{background:#f2f5f9}
+.lejant-satir.kapali{opacity:.4}
+.lejant-satir .cizgi{width:16px;height:4px;border-radius:3px;flex:none}
+.lejant-satir b{font-size:12px}
+.lejant-satir .mini{margin-left:auto;white-space:nowrap}
+
+/* iğne isim etiketi */
+.leaflet-tooltip.igne-etiket{
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:6px;
+  box-shadow:0 1px 4px rgba(0,0,0,.2);font-size:11px;font-weight:600;color:var(--ink);
+  padding:2px 6px;white-space:nowrap
+}
+.leaflet-tooltip.igne-etiket:before{display:none}
+@media(max-width:640px){
+  .harita.buyuk{height:calc(100vh - 210px);min-height:380px}
+  .harita-lejant{left:10px;right:10px;bottom:10px;max-width:none}
+}
 
 /* rota kartı */
 .rota-kart{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff;box-shadow:var(--sh);margin-bottom:14px}
@@ -341,9 +373,14 @@ tbody tr:hover{background:#f7f9fc}
           <option value="gidis">Sabah — gidiş</option>
           <option value="donus">Akşam — dönüş</option>
         </select>
-        <label class="mini satir" style="gap:6px"><input type="checkbox" id="rotaGoster" checked> Güzergahları göster</label>
+        <label class="mini satir" style="gap:6px"><input type="checkbox" id="isimGoster" checked> İsimler</label>
+        <label class="mini satir" style="gap:6px"><input type="checkbox" id="rotaGoster" checked> Güzergahlar</label>
+        <button class="btn ikincil kucuk" id="tamEkranBtn">Tam ekran</button>
       </div>
-      <div class="kart" style="padding:8px"><div id="anaHarita" class="harita" style="height:520px"></div></div>
+      <div class="harita-sar" id="anaHaritaSar">
+        <div id="anaHarita" class="harita buyuk"></div>
+        <div class="harita-lejant" id="haritaLejant"></div>
+      </div>
     </section>
 
     <!-- AYLIK KONTROL -->
@@ -464,11 +501,12 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '1.9';
+const SURUM = '2.0';
 const SURUM_TARIH = '2026-09-02';
 const SURUM_NOTU = 'Gidiş+dönüş ayrı rota · günlük devamsızlık · otomatik yakıt fiyatı · hava durumu payı · '
                  + 'anahtarsız harita katmanları · adresten otomatik dolan harita araması · '
-                 + 'sunucudan yayın ve otomatik güncelleme bildirimi · tek hesapla giriş · masaüstüne kurulabilir';
+                 + 'sunucudan yayın · tek hesapla giriş · masaüstüne kurulabilir · '
+                 + 'büyük harita, isim etiketleri, araç lejantı ve tam ekran';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -884,8 +922,13 @@ function personelDuzenle(id){
       <button class="btn ikincil kucuk" id="pCozBtn" type="button">Kademeli ara</button>
       <span class="mini" id="pCozDurum"></span>
     </div>
-    <p class="mini" style="margin:0 0 6px">Haritaya tıkla ya da iğneyi sürükleyerek kapı önünü tam işaretle. Sağ üstten uydu görünümüne geçebilirsin.</p>
-    <div id="pHarita" class="harita orta"></div>
+    <div class="satir" style="margin:0 0 6px">
+      <span class="mini" style="flex:1">Haritaya tıkla ya da iğneyi sürükle — kapı önünü tam işaretle.</span>
+      <button class="btn ikincil kucuk" id="pTamEkran" type="button">Tam ekran</button>
+    </div>
+    <div class="harita-sar" id="pHaritaSar" style="padding:0;border:0;box-shadow:none">
+      <div id="pHarita" class="harita orta"></div>
+    </div>
     <div class="satir" style="margin-top:8px">
       <div class="alan" style="flex:1;margin:0"><label>Enlem</label><input id="pLat" type="number" step="0.000001" value="${p.lat??''}"></div>
       <div class="alan" style="flex:1;margin:0"><label>Boylam</label><input id="pLng" type="number" step="0.000001" value="${p.lng??''}"></div>
@@ -920,8 +963,10 @@ function personelDuzenle(id){
     ].filter(Boolean));
 
   setTimeout(() => {
-    const {m} = haritaKur('pHarita', [p.lat||37.8746, p.lng||32.4932], p.lat?17:12);
+    // kapı önü işaretlemek için uydu görünümü ve yakın zoom
+    const {m} = haritaKur('pHarita', [p.lat||37.8746, p.lng||32.4932], p.lat?18:12, 'uydu');
     if(!m) return;
+    $('#pTamEkran').onclick = () => tamEkranAc('pHaritaSar', m);
     L.marker([D.ayarlar.fabrika_lat, D.ayarlar.fabrika_lng], {opacity:.7})
       .addTo(m).bindPopup('Fabrika');
 
@@ -997,7 +1042,7 @@ function tabanKatmanlar(){
     ])
   };
 }
-function haritaKur(elId, merkez, zoom){
+function haritaKur(elId, merkez, zoom, zorlaKatman){
   if(!haritaVar()){
     const el = document.getElementById(elId);
     if(el) el.innerHTML = '<div class="ip" style="padding:30px">Harita kütüphanesi yüklenemedi.<br>'
@@ -1006,8 +1051,9 @@ function haritaKur(elId, merkez, zoom){
   }
   const m = L.map(elId, {scrollWheelZoom:true}).setView(merkez, zoom);
   const kat = tabanKatmanlar();
-  const secili = D.ayarlar && D.ayarlar.harita_katman === 'ayrintili' ? 'Ayrıntılı'
-               : D.ayarlar && D.ayarlar.harita_katman === 'uydu'      ? 'Uydu' : 'Sokak';
+  const anahtar = zorlaKatman || (D.ayarlar && D.ayarlar.harita_katman);
+  const secili = anahtar === 'ayrintili' ? 'Ayrıntılı'
+               : anahtar === 'uydu'      ? 'Uydu' : 'Sokak';
   kat[secili].addTo(m);
   L.control.layers(kat, null, {position:'topright'}).addTo(m);
   L.control.scale({imperial:false}).addTo(m);
@@ -1698,62 +1744,138 @@ $('#disaAktarBtn').addEventListener('click', () => {
 
 /* ================= HARİTA ================= */
 let anaH = null, anaKatman = null;
+const gizliAraclar = new Set();          // lejanttan kapatılan araçlar
+
+function aracRenkleri(){
+  const kullanilan = new Set(D.rotalar.map(r => r.arac_id));
+  const renk = {}; let i = 0;
+  D.araclar.forEach(v => { if(kullanilan.has(v.id)) renk[v.id] = RENKLER[i++ % RENKLER.length]; });
+  return renk;
+}
+
 function anaHaritaCiz(){
   const a = D.ayarlar;
   if(!anaH) anaH = haritaKur('anaHarita', [a.fabrika_lat||37.87, a.fabrika_lng||32.49], 12).m;
   if(!anaH) return;
   if(anaKatman) anaH.removeLayer(anaKatman);
   anaKatman = L.layerGroup().addTo(anaH);
-  const sinir = [];
-  const yonFiltre = $('#yonFiltre') ? $('#yonFiltre').value : 'gidis';
 
+  const sinir = [];
+  const yon = $('#yonFiltre').value;
+  const isim = $('#isimGoster').checked;
+  const rotaVar = $('#rotaGoster').checked;
+  const renkler = aracRenkleri();
+
+  // fabrika
   L.marker([a.fabrika_lat, a.fabrika_lng], {
-    icon: L.divIcon({className:'', html:`<div style="background:#16202e;color:#fff;padding:5px 9px;border-radius:7px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3)">FABRİKA</div>`, iconSize:[80,26], iconAnchor:[40,13]})
+    zIndexOffset: 900,
+    icon: L.divIcon({className:'', html:
+      `<div style="background:#16202e;color:#fff;padding:5px 10px;border-radius:7px;font-size:12px;
+        font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35)">FABRİKA</div>`,
+      iconSize:[86,26], iconAnchor:[43,13]})
   }).addTo(anaKatman);
   sinir.push([a.fabrika_lat, a.fabrika_lng]);
 
   const rotaliKisi = new Set();
-  if($('#rotaGoster').checked){
-    const kullanilan = new Set(D.rotalar.map(r=>r.arac_id));
-    const renkAnahtari = {}; let ri = 0;
-    D.araclar.forEach(v => { if(kullanilan.has(v.id)) renkAnahtari[v.id] = RENKLER[ri++ % RENKLER.length]; });
+  const lejant = [];
 
-    D.rotalar.filter(r => (r.yon||'gidis') === yonFiltre).forEach(r => {
-      const renk = renkAnahtari[r.arac_id] || RENKLER[0];
+  if(rotaVar){
+    D.rotalar.filter(r => (r.yon||'gidis') === yon).forEach(r => {
+      const v = arac(r.arac_id), s = kisi(r.sofor_id);
+      const renk = renkler[r.arac_id] || RENKLER[0];
       const dur = rotaDuraklari(r);
+      const yolcu = dur.filter(d => d.personel_id && d.personel_id !== r.sofor_id).length;
+      lejant.push({id:r.arac_id, renk, plaka:v?v.plaka:'—', sofor:s?s.ad_soyad:'—',
+                   km:r.toplam_km, yolcu});
       dur.forEach(d => { if(d.personel_id) rotaliKisi.add(d.personel_id); });
+      if(gizliAraclar.has(r.arac_id)) return;
+
       if(r.geometri){
         try{
           const c = JSON.parse(r.geometri).map(x => [x[1], x[0]]);
-          L.polyline(c, {color:renk, weight:5, opacity:.8}).addTo(anaKatman);
+          L.polyline(c, {color:'#fff', weight:9, opacity:.85}).addTo(anaKatman);   // dış hat
+          L.polyline(c, {color:renk, weight:5, opacity:.95}).addTo(anaKatman);
           c.forEach(x => sinir.push(x));
         }catch(e){}
       }
       dur.forEach((d,j) => {
         if(!d.personel_id) return;
-        const p = kisi(d.personel_id); if(!p||!p.lat) return;
+        const p = kisi(d.personel_id); if(!p || !p.lat) return;
         const sofor = p.id === r.sofor_id;
-        L.marker([p.lat,p.lng], {icon: L.divIcon({className:'', html:
-          `<div style="background:${sofor?'#f17f0a':renk};color:${metinRengi(sofor?'#f17f0a':renk)};width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.3)">${sofor?'Ş':j}</div>`,
-          iconSize:[26,26], iconAnchor:[13,13]})})
-          .bindPopup(`<b>${esc(p.ad_soyad)}</b><br>${esc(p.mahalle||'')} ${esc(p.adres||'')}<br>
-            <span style="color:${renk}">${esc(arac(r.arac_id)?.plaka||'')}</span> ·
-            ${yonFiltre==='donus'?'iniş':'biniş'} ${(d.binis_saat||'').slice(0,5)}`)
+        const zemin = sofor ? '#f17f0a' : renk;
+        const m = L.marker([p.lat,p.lng], {
+          zIndexOffset: sofor ? 800 : 500,
+          icon: L.divIcon({className:'', html:
+            `<div style="background:${zemin};color:${metinRengi(zemin)};width:28px;height:28px;
+              border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;
+              border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)">${sofor?'Ş':j}</div>`,
+            iconSize:[28,28], iconAnchor:[14,14]})})
+          .bindPopup(
+            `<b style="font-size:14px">${esc(p.ad_soyad)}</b><br>`
+            + `${esc([p.mahalle,p.adres,p.ilce].filter(Boolean).join(' · '))}<br><br>`
+            + `<b style="color:${renk}">${esc(v?v.plaka:'')}</b> · ${sofor?'şoför':'yolcu'}<br>`
+            + `${yon==='donus'?'İniş':'Biniş'} saati <b>${(d.binis_saat||'').slice(0,5)}</b>`
+            + (p.telefon ? `<br>${esc(p.telefon)}` : ''))
           .addTo(anaKatman);
+        if(isim) m.bindTooltip(p.ad_soyad.split(' ')[0] + ' ' + (p.ad_soyad.split(' ')[1]||''),
+          {permanent:true, direction:'right', offset:[16,0], className:'igne-etiket'});
         sinir.push([p.lat,p.lng]);
       });
     });
   }
+
+  // güzergaha girmeyenler
   D.personel.filter(p => p.aktif && p.lat && !rotaliKisi.has(p.id)).forEach(p => {
-    L.circleMarker([p.lat,p.lng], {radius:7, color:'#5b6a7d', fillColor:'#8b98a9', fillOpacity:.9, weight:2})
-      .bindPopup(`<b>${esc(p.ad_soyad)}</b><br>${esc(p.mahalle||'')} ${esc(p.adres||'')}<br><i>güzergaha dahil değil</i>`)
+    const m = L.circleMarker([p.lat,p.lng],
+      {radius:8, color:'#5b6a7d', fillColor:'#c3ccd7', fillOpacity:.95, weight:2.5})
+      .bindPopup(`<b>${esc(p.ad_soyad)}</b><br>${esc([p.mahalle,p.adres].filter(Boolean).join(' · '))}
+        <br><i>bu yönde güzergaha dahil değil</i>`)
       .addTo(anaKatman);
+    if(isim) m.bindTooltip(p.ad_soyad.split(' ')[0], {permanent:true, direction:'right',
+      offset:[10,0], className:'igne-etiket'});
     sinir.push([p.lat,p.lng]);
   });
-  if(sinir.length > 1) anaH.fitBounds(sinir, {padding:[35,35]});
-  setTimeout(()=>anaH.invalidateSize(), 120);
+
+  lejantCiz(lejant, yon);
+  if(sinir.length > 1) anaH.fitBounds(sinir, {padding:[45,45]});
+  setTimeout(() => anaH.invalidateSize(), 120);
 }
+
+function lejantCiz(liste, yon){
+  const el = $('#haritaLejant');
+  if(!liste.length){ el.innerHTML = '<div class="baslikcik">Güzergah hesaplanmadı</div>'; return; }
+  el.innerHTML = `<div class="baslikcik">${yon==='donus'?'Akşam — dönüş':'Sabah — gidiş'}</div>`
+    + liste.map(x => `<div class="lejant-satir ${gizliAraclar.has(x.id)?'kapali':''}"
+         onclick="aracGizleAc('${x.id}')" title="Göster / gizle">
+        <span class="cizgi" style="background:${x.renk}"></span>
+        <div><b>${esc(x.plaka)}</b><div class="mini" style="margin:0">${esc(x.sofor)}</div></div>
+        <span class="mini">${sy(x.km,1)} km · ${x.yolcu} kişi</span>
+      </div>`).join('')
+    + `<div class="mini" style="padding:6px 6px 2px;border-top:1px solid var(--line);margin-top:4px">
+         <b style="color:#f17f0a">Ş</b> şoför · numaralar sıra · tıkla = detay</div>`;
+}
+function aracGizleAc(id){
+  gizliAraclar.has(id) ? gizliAraclar.delete(id) : gizliAraclar.add(id);
+  anaHaritaCiz();
+}
+
+/* tam ekran */
+function tamEkranAc(sarId, harita){
+  const el = document.getElementById(sarId);
+  if(!el) return;
+  const kapali = !document.fullscreenElement;
+  const sonra = () => setTimeout(() => harita && harita.invalidateSize(), 250);
+  if(kapali && el.requestFullscreen) el.requestFullscreen().then(sonra).catch(()=>{});
+  else if(document.exitFullscreen) document.exitFullscreen().then(sonra).catch(()=>{});
+}
+$('#tamEkranBtn').addEventListener('click', () => tamEkranAc('anaHaritaSar', anaH));
+document.addEventListener('fullscreenchange', () => {
+  const b = $('#tamEkranBtn');
+  if(b) b.textContent = document.fullscreenElement ? 'Tam ekrandan çık' : 'Tam ekran';
+  setTimeout(() => { if(anaH) anaH.invalidateSize(); }, 250);
+});
 $('#rotaGoster').addEventListener('change', anaHaritaCiz);
+$('#isimGoster').addEventListener('change', anaHaritaCiz);
 $('#yonFiltre').addEventListener('change', anaHaritaCiz);
 
 /* ================= AYLIK KONTROL ================= */
