@@ -230,6 +230,13 @@ tbody tr:hover{background:#f7f9fc}
   box-shadow:0 10px 30px rgba(0,0,0,.28);max-width:760px;margin:0 auto
 }
 .guncelleme-bandi .mini{color:rgba(255,255,255,.75)}
+.hata-bandi{
+  position:fixed;left:16px;right:16px;top:16px;z-index:90;display:flex;align-items:center;gap:12px;
+  flex-wrap:wrap;background:#fdeceb;color:#8f1f19;border:1px solid #f0c9c6;padding:11px 15px;
+  border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:820px;margin:0 auto
+}
+.hata-bandi .mini{color:#a04b45}
+.hata-bandi .kapat{color:#8f1f19}
 .guncelleme-bandi .kapat{color:rgba(255,255,255,.7)}
 .ilerleme{height:6px;background:#e6ebf2;border-radius:6px;overflow:hidden;margin:10px 0}
 .ilerleme i{display:block;height:100%;background:var(--amber);transition:width .3s}
@@ -503,12 +510,12 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.1';
+const SURUM = '2.2';
 const SURUM_TARIH = '2026-09-02';
 const SURUM_NOTU = 'Gidiş+dönüş ayrı rota · günlük devamsızlık · otomatik yakıt fiyatı · hava durumu payı · '
                  + 'anahtarsız harita katmanları · adresten otomatik dolan harita araması · '
                  + 'sunucudan yayın · tek hesapla giriş · masaüstüne kurulabilir · '
-                 + 'büyük harita, araç lejantı, tam ekran; isimler yakınlaşınca görünür';
+                 + 'harita çökse bile form çalışır; hatalar artık ekranda görünüyor';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -586,6 +593,33 @@ function saatEkle(saat, dk){
   t = ((t % 1440) + 1440) % 1440;
   return String(Math.floor(t/60)).padStart(2,'0') + ':' + String(t%60).padStart(2,'0');
 }
+
+/* ================= HATA GÖSTERİCİSİ ================= */
+/* Sessiz çökme olmasın: yakalanmamış her hata ekranda görünsün. */
+let sonHata = '';
+function hataBandi(metin){
+  if(!metin || metin === sonHata) return;
+  sonHata = metin;
+  let d = document.getElementById('hataBandi');
+  if(!d){
+    d = document.createElement('div');
+    d.id = 'hataBandi';
+    d.className = 'hata-bandi';
+    document.body.appendChild(d);
+  }
+  d.innerHTML = `<b>Bir hata oluştu</b><span class="mini">${esc(metin.slice(0,220))}</span>
+    <div class="bosluk"></div>
+    <button class="btn ikincil kucuk" onclick="location.reload()">Sayfayı yenile</button>
+    <button class="kapat" onclick="this.parentNode.remove()">&times;</button>`;
+}
+window.addEventListener('error', e => {
+  const yer = e.filename ? ' (satır ' + e.lineno + ')' : '';
+  hataBandi((e.message || 'bilinmeyen hata') + yer);
+});
+window.addEventListener('unhandledrejection', e => {
+  const m = e.reason && (e.reason.message || e.reason);
+  hataBandi('İşlem tamamlanamadı: ' + String(m));
+});
 
 /* ================= SÜRÜM ================= */
 function surumYaz(){
@@ -965,53 +999,40 @@ function personelDuzenle(id){
     ].filter(Boolean));
 
   setTimeout(() => {
-    // kapı önü işaretlemek için uydu görünümü ve yakın zoom
-    const {m} = haritaKur('pHarita', [p.lat||37.8746, p.lng||32.4932], p.lat?18:12, 'uydu');
-    if(!m) return;
-    $('#pTamEkran').onclick = () => tamEkranAc('pHaritaSar', m);
-    L.marker([D.ayarlar.fabrika_lat, D.ayarlar.fabrika_lng], {opacity:.7})
-      .addTo(m).bindPopup('Fabrika');
+    /* ÖNEMLİ: form davranışları haritadan ÖNCE ve haritadan BAĞIMSIZ kurulur.
+       Harita yüklenmezse bile arama, doldurma ve kaydetme çalışmaya devam eder. */
+    let harita = null, ig = null;
 
-    let ig = null;
     const yaz = c => { $('#pLat').value = c.lat.toFixed(6); $('#pLng').value = c.lng.toFixed(6); };
     const koy = (lat, lng, zoom) => {
-      if(ig) m.removeLayer(ig);
-      ig = L.marker([lat,lng], {draggable:true}).addTo(m);
-      ig.on('dragend', () => yaz(ig.getLatLng()));
       yaz({lat, lng});
-      if(zoom) m.setView([lat,lng], zoom);
+      if(!harita) return;                       // harita yoksa sadece koordinatı yaz
+      try{
+        if(ig) harita.removeLayer(ig);
+        ig = L.marker([lat,lng], {draggable:true}).addTo(harita);
+        ig.on('dragend', () => yaz(ig.getLatLng()));
+        if(zoom) harita.setView([lat,lng], zoom);
+      }catch(e){ console.error('iğne konulamadı', e); }
     };
-    if(p.lat) koy(p.lat, p.lng);
-    m.on('click', e => koy(e.latlng.lat, e.latlng.lng));
-    setTimeout(()=>m.invalidateSize(), 150);
 
-    $('#pCozBtn').onclick = async () => {
-      $('#pCozDurum').textContent = 'Aranıyor…';
-      const s = await adresCoz({ilce:$('#pIlce').value, mahalle:$('#pMah').value, adres:$('#pAdres').value});
-      if(s){
-        koy(s.lat, s.lng, 17);
-        $('#pCozDurum').innerHTML = `Bulundu — <b>${['sokak düzeyi','sokak (ilçe)','mahalle düzeyi','ilçe düzeyi'][s.seviye]||'yaklaşık'}</b>, haritada kontrol et`;
-      } else $('#pCozDurum').textContent = 'Bulunamadı, haritadan işaretle.';
-    };
-    /* arama kutusunu adres alanlarından doldur; kullanıcı elle yazdıysa dokunma */
+    /* --- arama kutusu: adres alanlarından otomatik dolar --- */
     let elleYazildi = false;
     const mahalleMetni = () => {
-      const m = $('#pMah').value.trim();
-      if(!m) return '';
-      return /\bmah(alle(si)?)?\.?$/i.test(m) ? m : m + ' Mahallesi';
+      const mh = $('#pMah').value.trim();
+      if(!mh) return '';
+      return /\bmah(alle(si)?)?\.?$/i.test(mh) ? mh : mh + ' Mahallesi';
     };
     const aramaMetni = () => [
       sokakSadelestir($('#pAdres').value), mahalleMetni(),
       $('#pIlce').value.trim(), 'Konya'
     ].filter(Boolean).join(', ');
-    const doldur = (zorla) => {
+    const doldur = zorla => {
       if(elleYazildi && !zorla) return;
       $('#pAra').value = aramaMetni();
       if(zorla) elleYazildi = false;
     };
     doldur(true);
-    ['#pAdres','#pMah','#pIlce'].forEach(s =>
-      $(s).addEventListener('input', () => doldur(false)));
+    ['#pAdres','#pMah','#pIlce'].forEach(s => $(s).addEventListener('input', () => doldur(false)));
     $('#pAra').addEventListener('input', () => { elleYazildi = true; });
     $('#pYenidenDoldur').onclick = () => { doldur(true); $('#pCozDurum').textContent = 'Adres alanlarından yenilendi.'; };
 
@@ -1023,7 +1044,37 @@ function personelDuzenle(id){
       if(s){ koy(s.lat, s.lng, 17); $('#pCozDurum').innerHTML = 'Bulundu — ' + esc(s.ad.slice(0,80)); }
       else $('#pCozDurum').textContent = 'Bulunamadı — "Kademeli ara"yı dene ya da haritadan işaretle.';
     };
-    $('#pAra').addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); $('#pAraBtn').click(); } });
+    $('#pAra').addEventListener('keydown', e => {
+      if(e.key === 'Enter'){ e.preventDefault(); $('#pAraBtn').click(); } });
+
+    $('#pCozBtn').onclick = async () => {
+      $('#pCozDurum').textContent = 'Aranıyor…';
+      const s = await adresCoz({ilce:$('#pIlce').value, mahalle:$('#pMah').value, adres:$('#pAdres').value});
+      if(s){
+        koy(s.lat, s.lng, 17);
+        $('#pCozDurum').innerHTML = `Bulundu — <b>${['sokak düzeyi','sokak (ilçe)','mahalle düzeyi','ilçe düzeyi'][s.seviye]||'yaklaşık'}</b>, haritada kontrol et`;
+      } else $('#pCozDurum').textContent = 'Bulunamadı, haritadan işaretle.';
+    };
+
+    /* --- harita: çökerse forma dokunmasın --- */
+    try{
+      const sonuc = haritaKur('pHarita', [p.lat||37.8746, p.lng||32.4932], p.lat?18:12, 'uydu');
+      harita = sonuc && sonuc.m;
+      if(harita){
+        $('#pTamEkran').onclick = () => tamEkranAc('pHaritaSar', harita);
+        L.marker([D.ayarlar.fabrika_lat, D.ayarlar.fabrika_lng], {opacity:.7})
+          .addTo(harita).bindPopup('Fabrika');
+        if(p.lat) koy(p.lat, p.lng);
+        harita.on('click', e => koy(e.latlng.lat, e.latlng.lng));
+        setTimeout(() => { try{ harita.invalidateSize(); }catch(e){} }, 150);
+      }
+    }catch(e){
+      console.error('harita kurulamadı', e);
+      const el = document.getElementById('pHarita');
+      if(el) el.innerHTML = '<div class="ip" style="padding:26px">Harita açılamadı: '
+        + esc(String(e && e.message || e))
+        + '<br>Koordinatı elle girebilir ya da arama düğmesini kullanabilirsin.</div>';
+    }
   }, 60);
 }
 
