@@ -8,6 +8,9 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Roboto+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 /* Üçel kurumsal kimliği: mavi #005791, turuncu #f17f0a, gri #757873, krem #f8f6f1
@@ -1986,24 +1989,9 @@ setInterval(surumKontrol, 15*60*1000);
 window.addEventListener('focus', () => { guncellemeBildirildi || surumKontrol(); });
 setTimeout(surumKontrol, 8000);
 
-/* ================= PWA ================= */
-const manifest = {
-  name:'ÜÇEL Personel Servisi', short_name:'ÜÇEL Servis',
-  start_url: SUNUCUDA ? location.pathname + location.search : '.',
-  scope: SUNUCUDA ? location.pathname : undefined,
-  display:'standalone', orientation:'any', lang:'tr',
-  description:'Üçel Yapısal Çelik personel servisi güzergah planlama ve takip',
-  background_color:'#005791', theme_color:'#005791',
-  icons:[{src:'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" rx="96" fill="#005791"/><text x="256" y="336" font-family="Arial Narrow,Arial" font-size="230" font-weight="bold" fill="#f17f0a" text-anchor="middle">ÜÇEL</text></svg>'
-  ))), sizes:'512x512', type:'image/svg+xml'}]
-};
-const ml = document.createElement('link');
-ml.rel = 'manifest';
-/* Manifest sayfayla aynı kaynaktan gelmek zorunda — Chrome başka bir alan adındaki
-   manifesti yok sayıyor. Bu yüzden sayfanın içinde üretiliyor. */
-ml.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type:'application/json'}));
-document.head.appendChild(ml);
+/* PWA manifesti ve ikonlar ayrı dosyalarda (manifest.json, icon-*.png).
+   Yerelden açıldığında bulunamaz, sorun değil; sunucudan açıldığında
+   Chrome "Uygulamayı yükle" seçeneğini gösterir. */
 
 /* ilk açılış + oturum değişimlerini izle */
 if(sb) sb.auth.onAuthStateChange((olay) => {
