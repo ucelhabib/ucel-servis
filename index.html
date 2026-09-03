@@ -91,6 +91,34 @@ header .logo-alt{color:rgba(255,255,255,.65);font-size:11px;margin:0}
 .rozet{background:rgba(255,255,255,.15);padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
 .cikis{background:none;border:1px solid rgba(255,255,255,.25);color:#fff;padding:5px 11px;border-radius:8px;cursor:pointer;font-size:13px}
 
+/* ---- bildirim zili ve paneli ---- */
+.zilSar{position:relative;display:inline-flex}
+.zil{display:inline-flex;align-items:center;justify-content:center;padding:5px 9px;position:relative}
+.zil:hover{background:rgba(255,255,255,.12)}
+.zilSayi{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;
+  border-radius:9px;background:#c0392b;color:#fff;font-size:11px;font-weight:700;
+  line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--navy)}
+.zilSayi.sakin{background:var(--amber);color:#3a2600}
+.bildirimPanel{position:absolute;top:calc(100% + 10px);right:0;width:min(420px,calc(100vw - 24px));
+  max-height:min(560px,70vh);overflow-y:auto;background:#fff;color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 34px rgba(16,24,40,.22);
+  z-index:60;padding:6px}
+.bildirimPanel .bBas{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
+.bildirimPanel .bBas b{font-size:14px}
+.bGrup{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--ink-3);padding:10px 12px 4px}
+.bSatir{display:flex;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;align-items:flex-start}
+.bSatir:hover{background:#f5f7fa}
+.bSatir.duz{cursor:default}
+.bSatir.duz:hover{background:none}
+.bNok{flex:none;width:9px;height:9px;border-radius:50%;margin-top:5px}
+.n-sorun{background:#c0392b} .n-yakin{background:#e0a020}
+.n-eksik{background:#9aa0a6} .n-iyi{background:#1a9c5c}
+.bSatir .bMetin{flex:1;min-width:0;font-size:13px;line-height:1.5}
+.bSatir .bMetin b{font-weight:700}
+.bSatir .bAlt{font-size:11.5px;color:var(--ink-3);margin-top:1px}
+.bBos{padding:26px 16px;text-align:center;color:var(--ink-3);font-size:13px}
+
 nav{
   background:#fff;border-bottom:1px solid var(--line);display:flex;gap:2px;padding:0 8px;
   overflow-x:auto;position:sticky;top:0;z-index:30;-webkit-overflow-scrolling:touch;scrollbar-width:none
@@ -329,6 +357,16 @@ tbody tr:hover{background:#f7f9fc}
     <div class="kullanici">
       <span class="mini" id="hKullanici" style="color:rgba(255,255,255,.75)"></span>
       <button class="cikis hide" id="kurBtn" title="Uygulamayı masaüstüne kur">Masaüstüne kur</button>
+      <div class="zilSar">
+        <button class="cikis zil" id="zilBtn" title="Bildirimler">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span class="zilSayi hide" id="zilSayi">0</span>
+        </button>
+        <div class="bildirimPanel hide" id="bildirimPanel"></div>
+      </div>
       <button class="cikis" id="yenileBtn">Yenile</button>
       <button class="cikis" id="cikisBtn">Çıkış</button>
     </div>
@@ -540,11 +578,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.9';
+const SURUM = '3.0';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Otomatik güncelleme: yeni sürüm yayınlandığı an uygulama kendini yeniler, '
-                 + 'kapatıp açmaya gerek yok. Açık bir pencere ya da süren bir işlem varsa bitmesini bekler. '
-                 + 'Ayrıca "Neden bu plan?" karşılaştırma tablosu, bakım-belge takibi ve şoför güzergah linki.';
+const SURUM_NOTU = 'Sağ üstte bildirim zili: sorunlar, yaklaşan bakım ve belgeler, eksik kalan işler '
+                 + 've yolunda gidenler tek yerde. Aynı koordinatta görünen farklı adresleri de yakalar. '
+                 + 'Otomatik güncelleme, "Neden bu plan?" tablosu, bakım-belge takibi ve şoför güzergah linki.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -888,7 +926,7 @@ async function verileriYukle(){
   const ilkHata = [ay,pe,ar,ro,du,ko,dv].find(x => x.error);
   if(ilkHata && !D.ayarlar.id) throw new Error(ilkHata.error.message);
   cizPanel(); cizPersonel(); cizAraclar(); cizRotalar(); cizKontrol(); cizAyarlar(); cizGunlukDurum();
-  cizPlanSecenekleri();
+  cizPlanSecenekleri(); cizBildirimler();
 }
 const kisi = id => D.personel.find(p => p.id===id);
 const arac = id => D.araclar.find(a => a.id===id);
@@ -2904,6 +2942,198 @@ function modalAc(baslik, govde, dugmeler){
   yuva.querySelector('.modal-arka').onclick = e => { if(e.target.classList.contains('modal-arka')) modalKapat(); };
 }
 function modalKapat(){ $('#modalYuva').innerHTML = ''; }
+
+/* =========================================================
+   BİLDİRİMLER
+   Program neyin yolunda, neyin aksadığını ve neyin eksik kaldığını
+   kendisi söyler. Dört seviye: sorun · yaklaşan · eksik · iyi.
+   Her satır ilgili ekrana götürür.
+   ========================================================= */
+const BILDIRIM_BASLIK = {
+  sorun:'Sorun — ilgilenmen gerekiyor', yakin:'Yaklaşan',
+  eksik:'Eksik iş', iyi:'Yolunda giden'
+};
+function bildirimUret(){
+  const b = [];
+  const ek = (seviye, metin, alt, git) => b.push({seviye, metin, alt, git});
+  const a = D.ayarlar || {};
+  const bg = bugunTarih();
+  const aktifArac = D.araclar.filter(v => v.aktif);
+  const servisli = D.personel.filter(p => p.aktif && p.servis_kullaniyor);
+
+  /* --- konum sorunları --- */
+  const konumsuz = servisli.filter(p => !(enlemGecerli(p.lat) && boylamGecerli(p.lng)));
+  if(konumsuz.length)
+    ek('sorun', `<b>${konumsuz.length} personelin konumu yok</b> — güzergaha katılamıyorlar`,
+       konumsuz.map(p=>p.ad_soyad).join(', '), () => sekmeAc('personel'));
+
+  // Aynı koordinat, farklı adres: geocoding hatasının klasik işareti
+  const konumlu = servisli.filter(p => enlemGecerli(p.lat) && boylamGecerli(p.lng));
+  const R = 6371000, rad = d => d*Math.PI/180;
+  const uzaklik = (p,q) => {
+    const x = Math.sin(rad(q.lat-p.lat)/2)**2 +
+      Math.cos(rad(p.lat))*Math.cos(rad(q.lat))*Math.sin(rad(q.lng-p.lng)/2)**2;
+    return 2*R*Math.asin(Math.sqrt(x));
+  };
+  const ayniAd = (p,q) => (p.adres||'').trim().toLocaleLowerCase('tr') === (q.adres||'').trim().toLocaleLowerCase('tr')
+                       && (p.mahalle||'').trim().toLocaleLowerCase('tr') === (q.mahalle||'').trim().toLocaleLowerCase('tr');
+  for(let i=0;i<konumlu.length;i++) for(let j=i+1;j<konumlu.length;j++){
+    const d = uzaklik(konumlu[i], konumlu[j]);
+    if(d < 60 && !ayniAd(konumlu[i], konumlu[j]))
+      ek('sorun', `<b>${esc(konumlu[i].ad_soyad)}</b> ile <b>${esc(konumlu[j].ad_soyad)}</b> ayrı adreste
+          ama koordinatları neredeyse aynı (${Math.round(d)} m)`,
+         'Biri yanlış olabilir — haritadan kontrol et', () => sekmeAc('personel'));
+  }
+  const dogrulanmamis = konumlu.filter(p => !p.konum_dogrulandi);
+  if(dogrulanmamis.length)
+    ek('eksik', `${dogrulanmamis.length} personelin konumu <b>doğrulanmamış</b>`,
+       dogrulanmamis.map(p=>p.ad_soyad).join(', '), () => sekmeAc('personel'));
+
+  /* --- araç ve fiyat --- */
+  const soforsuz = aktifArac.filter(v => !v.sofor_id);
+  if(soforsuz.length)
+    ek('eksik', `${soforsuz.length} aracın şoförü atanmamış — <b>hesaba hiç girmiyor</b>`,
+       soforsuz.map(v=>v.plaka).join(', '), () => sekmeAc('araclar'));
+  const tuketimsiz = aktifArac.filter(v => !Number(v.tuketim_100km));
+  if(tuketimsiz.length)
+    ek('sorun', `${tuketimsiz.length} aracın tüketimi girilmemiş — maliyeti hesaplanamıyor`,
+       tuketimsiz.map(v=>v.plaka).join(', '), () => sekmeAc('araclar'));
+  const yakitlar = new Set(aktifArac.filter(v=>v.sofor_id).map(v => v.yakit));
+  const fiyatsiz = [...yakitlar].filter(y => !Number(kmMaliyet({yakit:y, tuketim_100km:100, bakim_km_maliyet:0})));
+  if(fiyatsiz.length)
+    ek('sorun', `Yakıt fiyatı girilmemiş: <b>${fiyatsiz.map(y=>YAKIT_AD[y]).join(', ')}</b>`,
+       'Ayarlar → Yakıt fiyatları', () => sekmeAc('ayarlar'));
+  if(a.fiyat_guncelleme){
+    const gun = gunFark(String(a.fiyat_guncelleme).slice(0,10), bg);
+    if(gun <= 1)
+      ek('iyi', `Yakıt fiyatları güncel`,
+         `${esc(a.fiyat_kaynak||'')} · dizel ${sy(a.fiyat_dizel,2)} · benzin ${sy(a.fiyat_benzin,2)} · LPG ${sy(a.fiyat_otogaz,2)}`,
+         () => sekmeAc('ayarlar'));
+    else if(gun > 4)
+      ek('yakin', `Yakıt fiyatları <b>${gun} gündür</b> güncellenmedi`,
+         'Ayarlar → Fiyatları şimdi güncelle', () => sekmeAc('ayarlar'));
+  }
+
+  /* --- güzergah --- */
+  if(!D.rotalar.length){
+    ek('sorun', '<b>Güzergah hesaplanmamış</b>', 'Güzergah sekmesinden hesapla', () => sekmeAc('guzergah'));
+  }else{
+    const sonHesap = D.rotalar.reduce((s,r) => r.hesaplama_tarihi > s ? r.hesaplama_tarihi : s, '');
+    const planT = D.rotalar[0].plan_tarihi;
+    if(a.guncelleme && sonHesap && a.guncelleme > sonHesap)
+      ek('yakin', 'Ayarlar güzergahtan <b>sonra</b> değişti — plan eski',
+         'Yeniden hesaplamak iyi olur', () => sekmeAc('guzergah'));
+    if(planT && planT !== bg)
+      ek('yakin', `Ekrandaki plan <b>${trTarih(planT)}</b> tarihli`,
+         'Bugün için yeniden hesapla', () => sekmeAc('guzergah'));
+    const secili = (D.planSecenek||[]).find(x => x.secili);
+    if(secili){
+      const enUzun = Number(secili.en_uzun_dk), limit = Number(a.max_servis_dk)||45;
+      if(enUzun > limit)
+        ek('sorun', `En uzun yolculuk <b>${sy(enUzun,0)} dk</b> — limit ${limit} dk`,
+           'Araç ekle ya da limiti gözden geçir', () => sekmeAc('guzergah'));
+      else
+        ek('iyi', `Plan hazır: <b>${esc(secili.arac_adlari)}</b>`,
+           `${sy(secili.km,1)} km/gün · ${tl(secili.cep_ay)}/ay · en uzun yolculuk ${sy(enUzun,0)} dk`,
+           () => sekmeAc('guzergah'));
+      const digerUcuz = (D.planSecenek||[]).filter(x => !x.secili && x.uygun &&
+        Number(x.cep_ay) < Number(secili.cep_ay) - 50);
+      if(digerUcuz.length)
+        ek('yakin', `Daha ucuz ve süreye uyan bir plan var: <b>${esc(digerUcuz[0].arac_adlari)}</b>`,
+           `ayda ${tl(Number(secili.cep_ay)-Number(digerUcuz[0].cep_ay))} tasarruf`, () => sekmeAc('guzergah'));
+    }
+  }
+
+  /* --- bakım ve belgeler --- */
+  aktifArac.forEach(v => {
+    aracBakimlari(v.id).forEach(x => {
+      if(x.seviye === 'gecti')
+        ek('sorun', `<b>${esc(v.plaka)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => bakimAc(v.id));
+      else if(x.seviye === 'yakin')
+        ek('yakin', `<b>${esc(v.plaka)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => bakimAc(v.id));
+      else if(x.seviye === 'bilinmiyor')
+        ek('eksik', `<b>${esc(v.plaka)}</b> · ${esc(x.ad)} kaydı girilmemiş`,
+           'Son yapılan işlemi gir ki takip başlasın', () => bakimAc(v.id));
+    });
+    if(!guncelKm(v.id))
+      ek('eksik', `<b>${esc(v.plaka)}</b> · kilometre okuması yok`,
+         'Aylık Kontrol\'den km gir', () => sekmeAc('kontrol'));
+    else{
+      const o = sonOkuma(v.id);
+      const gun = o && o.tarih ? gunFark(o.tarih, bg) : 999;
+      if(gun > 45)
+        ek('yakin', `<b>${esc(v.plaka)}</b> · km okuması ${gun} günlük`,
+           'Bakım uyarıları tahminle çalışıyor', () => sekmeAc('kontrol'));
+    }
+  });
+  D.personel.filter(p => p.aktif && p.gorev === 'sofor').forEach(p => {
+    kisiBelgeleri(p.id).forEach(x => {
+      if(x.seviye === 'gecti')
+        ek('sorun', `<b>${esc(p.ad_soyad)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => belgeAc(p.id));
+      else if(x.seviye === 'yakin')
+        ek('yakin', `<b>${esc(p.ad_soyad)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => belgeAc(p.id));
+      else if(x.seviye === 'bilinmiyor')
+        ek('eksik', `<b>${esc(p.ad_soyad)}</b> · ${esc(x.ad)} girilmemiş`, null, () => belgeAc(p.id));
+    });
+  });
+
+  /* --- iyi haberler --- */
+  const sorunSayisi = b.filter(x => x.seviye==='sorun').length;
+  const yakinSayisi = b.filter(x => x.seviye==='yakin').length;
+  if(!sorunSayisi && !yakinSayisi && aktifArac.length)
+    ek('iyi', 'Bakım ve belgelerin hepsi güncel', 'Zamanı gelen bir şey yok', () => sekmeAc('araclar'));
+  if(!konumsuz.length && servisli.length)
+    ek('iyi', `${servisli.length} personelin konumu tanımlı`, null, () => sekmeAc('personel'));
+
+  const sira = {sorun:0, yakin:1, eksik:2, iyi:3};
+  return b.sort((x,y) => sira[x.seviye] - sira[y.seviye]);
+}
+
+let bildirimler = [], bildirimIsleri = [];
+function cizBildirimler(){
+  const zil = $('#zilBtn'), sayiEl = $('#zilSayi'), panel = $('#bildirimPanel');
+  if(!zil || !panel) return;
+  try{ bildirimler = bildirimUret(); }catch(e){ bildirimler = []; }
+  const sorun = bildirimler.filter(x => x.seviye === 'sorun').length;
+  const yakin = bildirimler.filter(x => x.seviye === 'yakin').length;
+  const sayi = sorun + yakin;
+  sayiEl.textContent = sayi;
+  sayiEl.classList.toggle('hide', !sayi);
+  sayiEl.classList.toggle('sakin', !sorun);
+  zil.title = sayi ? `${sorun} sorun, ${yakin} yaklaşan iş` : 'Her şey yolunda';
+
+  bildirimIsleri = [];
+  const grup = s => {
+    const liste = bildirimler.filter(x => x.seviye === s);
+    if(!liste.length) return '';
+    return `<div class="bGrup">${BILDIRIM_BASLIK[s]} · ${liste.length}</div>` +
+      liste.map(x => {
+        const i = bildirimIsleri.push(x.git) - 1;
+        return `<div class="bSatir ${x.git?'':'duz'}" ${x.git?`onclick="bildirimGit(${i})"`:''}>
+          <span class="bNok n-${s}"></span>
+          <span class="bMetin">${x.metin}${x.alt?`<div class="bAlt">${x.alt}</div>`:''}</span>
+        </div>`;
+      }).join('');
+  };
+  panel.innerHTML = `<div class="bBas"><b>Bildirimler</b>
+      <span class="mini">${bildirimler.length} kayıt</span><div class="bosluk"></div>
+      <button class="btn ikincil kucuk" onclick="bildirimPaneliKapat()">Kapat</button></div>`
+    + (bildirimler.length
+        ? ['sorun','yakin','eksik','iyi'].map(grup).join('')
+        : '<div class="bBos">Bildirim yok.</div>');
+}
+function bildirimGit(i){
+  bildirimPaneliKapat();
+  const f = bildirimIsleri[i];
+  if(typeof f === 'function') setTimeout(f, 60);
+}
+function bildirimPaneliKapat(){ $('#bildirimPanel')?.classList.add('hide'); }
+document.addEventListener('click', e => {
+  const panel = $('#bildirimPanel'), zil = $('#zilBtn');
+  if(!panel || !zil) return;
+  if(zil.contains(e.target)){ panel.classList.toggle('hide'); return; }
+  if(!panel.contains(e.target)) panel.classList.add('hide');
+});
 
 /* ================= OTOMATİK GÜNCELLEME =================
    Yeni sürüm yayınlandığında uygulama kendini yeniler — düğmeye basmaya,
