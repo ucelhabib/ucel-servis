@@ -71,6 +71,7 @@ a{color:var(--navy-2)}
 .mesaj.hata{background:#fdeceb;color:#8f1f19;border:1px solid #f6ccc8}
 .mesaj.iyi{background:#e8f5ee;color:#0b6b3c;border:1px solid #c4e6d4}
 .mesaj.uyari{background:#fdf4e3;color:#7a5410;border:1px solid #f2e0bb}
+.mesaj.bilgi{background:#eef3f9;color:#33465e;border:1px solid #d3ddea}
 
 /* ---------- KABUK ---------- */
 #uyg{display:none;min-height:100vh;flex-direction:column}
@@ -146,6 +147,24 @@ tbody tr:hover{background:#f7f9fc}
 .e-otogaz{background:#fdf0e3;color:#8a5a12}
 .e-elektrik{background:#e6f4ee;color:#0b6b3c}
 .e-benzin{background:#f5ecf7;color:#6a3a7a}
+
+/* bakım / belge durumu */
+.bakimSatir{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.bakimRozet{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+  font-size:11.5px;font-weight:600;line-height:1.5;border:1px solid transparent}
+.bakimRozet::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.r-iyi{background:#e8f5ee;color:#0b6b3c;border-color:#cbe7d8}
+.r-yakin{background:#fdf4e3;color:#7a5410;border-color:#f0e0bf}
+.r-gecti{background:#fdeceb;color:#9b2620;border-color:#f4cdca}
+.r-bilinmiyor{background:#f2f2f0;color:#6b6b66;border-color:#e3e0d8}
+.rozetSayi{display:inline-block;min-width:17px;height:17px;padding:0 4px;margin-left:6px;
+  border-radius:9px;background:#c0392b;color:#fff;font-size:11px;font-weight:700;
+  line-height:17px;text-align:center;vertical-align:middle}
+.bakimKalem{border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px}
+.bakimKalem .bas{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px}
+.bakimKalem .bas b{font-size:13.5px}
+.bakimGecmis{font-size:12px;color:var(--ink-3);margin-top:7px;padding-top:7px;border-top:1px dashed var(--line)}
+.bakimGecmis div{padding:2px 0}
 
 .satir{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .mini{font-size:12px;color:var(--ink-3)}
@@ -373,6 +392,7 @@ tbody tr:hover{background:#f7f9fc}
       <div id="optDurum"></div>
       <div id="optSonuc"></div>
       <div id="rotaListe"></div>
+      <div id="planSecenek" class="yazdirma-gizle"></div>
     </section>
 
     <!-- HARİTA -->
@@ -520,11 +540,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.5';
+const SURUM = '2.8';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Yeni karar ölçütü: mesafe + zaman + ekonomi birlikte. '
-                 + 'Araç başına bakım/aşınma payı (₺/km) ve ayarlanabilir zaman ağırlığı (₺/kişi-dk). '
-                 + 'Süre limiti artık şoförler için de geçerli. Maliyet dökümü ekranda: yakıt / bakım / zaman.';
+const SURUM_NOTU = '"Neden bu plan?" tablosu: denenen bütün araç kombinasyonları, aradaki fark ve '
+                 + 'istersen elle plan seçme. Bakım ve belge takibi araç kartında; sürücü belgeleri personel listesinde. '
+                 + 'Şoföre giriş gerektirmeyen güzergah linki.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -578,7 +598,8 @@ function metinRengi(hex){
 
 const D = {
   ayarlar:null, personel:[], araclar:[], rotalar:[], duraklar:[],
-  kontrol:[], devamsizlik:[], fiyatlar:[], sonOpt:null
+  kontrol:[], devamsizlik:[], fiyatlar:[], bakimPlan:[], bakimKayit:[],
+  belgePlan:[], belgeKayit:[], baglantilar:[], planSecenek:[], sonOpt:null
 };
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
@@ -840,7 +861,7 @@ function sekmeAc(k){
 
 /* ================= VERİ ================= */
 async function verileriYukle(){
-  const [ay, pe, ar, ro, du, ko, dv, fi] = await Promise.all([
+  const [ay, pe, ar, ro, du, ko, dv, fi, bp, bk, gp, gk, rb, ps] = await Promise.all([
     sb.from('ayarlar').select('*').eq('id',1).single(),
     sb.from('personel').select('*').order('ad_soyad'),
     sb.from('araclar').select('*').order('plaka'),
@@ -849,15 +870,25 @@ async function verileriYukle(){
     sb.from('aylik_kontrol').select('*').order('donem',{ascending:false}),
     sb.from('devamsizlik').select('*').order('baslangic',{ascending:false}),
     sb.from('yakit_fiyatlari').select('*').order('tarih',{ascending:false}).limit(40),
+    sb.from('bakim_plani').select('*'),
+    sb.from('bakim_kayit').select('*').order('tarih',{ascending:false}),
+    sb.from('belge_plani').select('*'),
+    sb.from('belge_kayit').select('*').order('tarih',{ascending:false}),
+    sb.from('rota_baglanti').select('*'),
+    sb.from('plan_secenek').select('*').order('cep_ay'),
   ]);
   D.ayarlar = ay.data || {};
   D.personel = pe.data || []; D.araclar = ar.data || [];
   D.rotalar = ro.data || [];  D.duraklar = du.data || [];
   D.kontrol = ko.data || [];  D.devamsizlik = dv.data || [];
   D.fiyatlar = fi.data || [];
+  D.bakimPlan = bp.data || []; D.bakimKayit = bk.data || [];
+  D.belgePlan = gp.data || []; D.belgeKayit = gk.data || [];
+  D.baglantilar = rb.data || []; D.planSecenek = ps.data || [];
   const ilkHata = [ay,pe,ar,ro,du,ko,dv].find(x => x.error);
   if(ilkHata && !D.ayarlar.id) throw new Error(ilkHata.error.message);
   cizPanel(); cizPersonel(); cizAraclar(); cizRotalar(); cizKontrol(); cizAyarlar(); cizGunlukDurum();
+  cizPlanSecenekleri();
 }
 const kisi = id => D.personel.find(p => p.id===id);
 const arac = id => D.araclar.find(a => a.id===id);
@@ -918,20 +949,24 @@ function cizPanel(){
 
 /* ================= PERSONEL ================= */
 function cizPersonel(){
+  belgeRozetiTazele();
   const t = $('#personelTablo');
   $('#personelSayi').textContent = `${D.personel.filter(p=>p.aktif).length} aktif · ${D.personel.filter(p=>p.aktif&&!p.lat).length} konumsuz`;
   t.innerHTML = `<thead><tr>
       <th>Ad Soyad</th><th>Görev</th><th>İlçe / Mahalle</th><th>Adres</th><th>Konum</th><th></th>
     </tr></thead><tbody>` +
     (D.personel.length ? D.personel.map(p => `<tr>
-      <td><b>${esc(p.ad_soyad)}</b>${p.aktif?'':' <span class="etiket e-pasif">pasif</span>'}</td>
+      <td><b>${esc(p.ad_soyad)}</b>${p.aktif?'':' <span class="etiket e-pasif">pasif</span>'}
+        ${p.gorev==='sofor' ? belgeUyariHtml(p.id) : ''}</td>
       <td>${p.gorev==='sofor'?'<span class="etiket e-sofor">Şoför</span>':'<span class="mini">Personel</span>'}</td>
       <td>${esc(p.ilce||'')}${p.mahalle?' / '+esc(p.mahalle):''}</td>
       <td class="mini">${esc(p.adres||'')}</td>
       <td>${p.lat
           ? `<span class="etiket ${p.konum_dogrulandi?'e-ok':'e-yok'}">${p.konum_dogrulandi?'onaylı':'tahmini'}</span>`
           : '<span class="etiket e-yok">yok</span>'}</td>
-      <td class="sag"><button class="btn ikincil kucuk yetki" onclick="personelDuzenle('${p.id}')">Düzenle</button></td>
+      <td class="sag">${p.gorev==='sofor'
+          ? `<button class="btn ikincil kucuk yetki" onclick="belgeAc('${p.id}')">Belgeler</button> ` : ''
+        }<button class="btn ikincil kucuk yetki" onclick="personelDuzenle('${p.id}')">Düzenle</button></td>
     </tr>`).join('') : '<tr><td colspan="6" class="ip">Kayıt yok</td></tr>') + '</tbody>';
   if(!yazabilir()) $$('.yetki').forEach(b => b.classList.add('hide'));
 }
@@ -1282,7 +1317,282 @@ function kmMaliyet(v){ return yakitKm(v) + bakimKm(v); }
 /* Bir personelin serviste geçirdiği dakikanın ₺ karşılığı (konfor ağırlığı).
    0 girilirse program yalnızca paraya bakar — eski davranış. */
 function dakikaDegeri(){ const d = Number(D.ayarlar.dakika_degeri); return Number.isFinite(d) && d >= 0 ? d : 0; }
+/* =========================================================
+   BAKIM VE BELGE TAKİBİ
+   Kilometre tabanlı işler (yağ-filtre, lastik) için aracın güncel km'si
+   gerekiyor. Elle girilen son okumayı temel alır, aradaki iş günlerinde
+   güzergah km'sini ekleyerek tahmin eder. Tahmin her zaman "≈" ile
+   gösterilir; kesin rakam son okumadır.
+   ========================================================= */
+const BAKIM_AD = {
+  yag_filtre:'Yağ + filtre', lastik:'Lastik', muayene:'Muayene / vize',
+  trafik_sigorta:'Trafik sigortası', kasko:'Kasko', egzoz:'Egzoz ölçümü',
+  guzergah_izin:'Güzergah izin belgesi', diger:'Diğer'
+};
+const BAKIM_KM_TABANLI = ['yag_filtre','lastik'];
+const BAKIM_SIRA = ['yag_filtre','lastik','muayene','guzergah_izin','trafik_sigorta','kasko','egzoz','diger'];
+
+const gunEkle = (t, n) => { const d = new Date(t+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+const ayEkle  = (t, n) => { const d = new Date(t+'T00:00:00'); d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,10); };
+const bugunTarih = () => new Date().toISOString().slice(0,10);
+const gunFark = (a, b) => Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00'))/86400000);
+const trTarih = t => t ? new Date(t+'T00:00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'short',year:'numeric'}) : '—';
+
+/* iki tarih arasındaki hafta içi gün sayısı (kaba iş günü) */
+function isGunu(bas, bit){
+  let n = 0; const d = new Date(bas+'T00:00:00'), s = new Date(bit+'T00:00:00');
+  while(d < s){ d.setDate(d.getDate()+1); const g = d.getDay(); if(g!==0 && g!==6) n++; }
+  return n;
+}
+/* aracın güzergahta yaptığı günlük km (gidiş + dönüş) */
+function gunlukRotaKm(aracId){
+  return D.rotalar.filter(r => r.arac_id === aracId)
+                  .reduce((s,r) => s + Number(r.toplam_km||0), 0);
+}
+/* son elle girilen km okuması */
+function sonOkuma(aracId){
+  const kayitlar = D.kontrol.filter(k => k.arac_id === aracId &&
+    (Number(k.bitis_km) > 0 || Number(k.baslangic_km) > 0));
+  if(!kayitlar.length) return null;
+  const k = kayitlar.slice().sort((a,b) =>
+    String(b.okuma_tarihi||b.donem).localeCompare(String(a.okuma_tarihi||a.donem)))[0];
+  const km = Number(k.bitis_km) > 0 ? Number(k.bitis_km) : Number(k.baslangic_km);
+  return { km, tarih: (k.okuma_tarihi || k.donem || '').slice(0,10) };
+}
+/* güncel km: son okuma + o günden bugüne tahmini servis km'si */
+function guncelKm(aracId){
+  const o = sonOkuma(aracId);
+  if(!o || !o.tarih) return null;
+  const gk = gunlukRotaKm(aracId);
+  const gun = Math.max(0, isGunu(o.tarih, bugunTarih()));
+  const eklenen = gk * gun;
+  return { km: o.km + eklenen, okuma:o.km, okumaTarih:o.tarih, eklenen, gun, tahmini: eklenen > 0 };
+}
+/* bir araç + tür için: en son ne zaman yapıldı, sıradaki ne zaman, durumu ne */
+function bakimDurumu(aracId, tur){
+  const plan = D.bakimPlan.find(p => p.arac_id === aracId && p.tur === tur);
+  if(!plan || !plan.aktif) return null;
+  const son = D.bakimKayit.filter(k => k.arac_id === aracId && k.tur === tur)
+                          .sort((a,b) => String(b.tarih).localeCompare(String(a.tarih)))[0];
+  const d = { tur, ad: BAKIM_AD[tur]||tur, plan, son, seviye:'bilinmiyor', metin:'kayıt yok', kalanKm:null, kalanGun:null };
+  if(!son){ d.metin = 'ilk kayıt girilmedi'; return d; }
+
+  const parcalar = [];
+  // km tarafı
+  if(plan.periyot_km && son.km != null){
+    const g = guncelKm(aracId);
+    d.hedefKm = Number(son.km) + plan.periyot_km;
+    if(g){
+      d.guncel = g;
+      d.kalanKm = d.hedefKm - g.km;
+      parcalar.push({tip:'km', kalan:d.kalanKm, esik:plan.uyari_km,
+        metin: d.kalanKm < 0 ? `${sy(Math.abs(d.kalanKm),0)} km geçti`
+                             : `${sy(d.kalanKm,0)} km kaldı`});
+    }
+  }
+  // tarih tarafı
+  const bitis = son.gecerlilik_bitis || (plan.periyot_ay ? ayEkle(son.tarih, plan.periyot_ay) : null);
+  if(bitis){
+    d.hedefTarih = bitis;
+    d.kalanGun = gunFark(bugunTarih(), bitis);
+    parcalar.push({tip:'gun', kalan:d.kalanGun, esik:plan.uyari_gun,
+      metin: d.kalanGun < 0 ? `${Math.abs(d.kalanGun)} gün geçti`
+                            : `${d.kalanGun} gün kaldı`});
+  }
+  if(!parcalar.length) return d;
+  // en kritik olanı göster: önce geçmiş olan, sonra eşiğe en yakın
+  parcalar.sort((a,b) => (a.kalan/Math.max(a.esik,1)) - (b.kalan/Math.max(b.esik,1)));
+  const en = parcalar[0];
+  d.seviye = en.kalan < 0 ? 'gecti' : (en.kalan <= en.esik ? 'yakin' : 'iyi');
+  // hem km hem tarih varsa ikisini de göster — kritik olan başta
+  d.metin  = parcalar.map(p => p.metin).join(' · ');
+  d.oncelik = en.kalan;
+  return d;
+}
+/* Girilen bakım faturalarından gerçek ₺/km. Güzergah hesabındaki tahmini
+   bakım payının yerine geçebilsin diye hesaplanır — otomatik uygulanmaz,
+   kullanıcı görüp onaylayarak alır. */
+function gercekBakimKm(aracId){
+  const kayitlar = D.bakimKayit.filter(k => k.arac_id===aracId && k.tutar != null && Number(k.km) > 0);
+  if(kayitlar.length < 1) return null;
+  const g = guncelKm(aracId);
+  const enDusuk = Math.min(...kayitlar.map(k => Number(k.km)));
+  const enYuksek = Math.max(enDusuk, g ? g.km : 0, ...kayitlar.map(k => Number(k.km)));
+  const aralik = enYuksek - enDusuk;
+  const toplam = kayitlar.reduce((s,k) => s + Number(k.tutar), 0);
+  if(aralik < 1000) return { yetersiz:true, toplam, aralik, adet:kayitlar.length };
+  return { tlKm: toplam/aralik, toplam, aralik, adet:kayitlar.length };
+}
+function aracBakimlari(aracId){
+  return BAKIM_SIRA.map(t => bakimDurumu(aracId, t)).filter(Boolean);
+}
+/* tüm filoda dikkat isteyen kalem sayısı — Araçlar sekmesindeki rozet */
+function bakimUyariSayisi(){
+  let n = 0;
+  D.araclar.filter(v => v.aktif).forEach(v =>
+    aracBakimlari(v.id).forEach(b => { if(b.seviye==='gecti' || b.seviye==='yakin') n++; }));
+  return n;
+}
+function bakimRozetiTazele(){
+  const btn = $$('#nav button').find(b => b.dataset.k === 'araclar');
+  if(!btn) return;
+  btn.querySelector('.rozetSayi')?.remove();
+  const n = bakimUyariSayisi();
+  if(!n) return;
+  const s = document.createElement('span');
+  s.className = 'rozetSayi'; s.textContent = n;
+  s.title = `${n} bakım/belge kalemi dikkat istiyor`;
+  btn.appendChild(s);
+}
+
+/* =========================================================
+   SÜRÜCÜ BELGELERİ — aynı mantık, yalnızca tarih tabanlı
+   ========================================================= */
+const BELGE_AD = {
+  ehliyet:'Ehliyet', src:'SRC belgesi', psikoteknik:'Psikoteknik',
+  toplu_tasima:'Toplu taşıma aracı kullanım belgesi', saglik_raporu:'Sağlık raporu',
+  adli_sicil:'Adli sicil kaydı', diger:'Diğer'
+};
+const BELGE_SIRA = ['ehliyet','src','psikoteknik','toplu_tasima','saglik_raporu','adli_sicil','diger'];
+
+function belgeDurumu(personelId, tur){
+  const plan = D.belgePlan.find(p => p.personel_id === personelId && p.tur === tur);
+  if(!plan || !plan.aktif) return null;
+  const son = D.belgeKayit.filter(k => k.personel_id === personelId && k.tur === tur)
+                          .sort((a,b) => String(b.tarih).localeCompare(String(a.tarih)))[0];
+  const d = { tur, ad: BELGE_AD[tur]||tur, plan, son, seviye:'bilinmiyor', metin:'kayıt yok', kalanGun:null };
+  if(!son) return d;
+  const bitis = son.gecerlilik_bitis || (plan.periyot_ay ? ayEkle(son.tarih, plan.periyot_ay) : null);
+  if(!bitis){ d.seviye = 'iyi'; d.metin = `${trTarih(son.tarih)} tarihli · bitiş girilmedi`; return d; }
+  d.hedefTarih = bitis;
+  d.kalanGun = gunFark(bugunTarih(), bitis);
+  d.seviye = d.kalanGun < 0 ? 'gecti' : (d.kalanGun <= plan.uyari_gun ? 'yakin' : 'iyi');
+  d.metin  = d.kalanGun < 0 ? `${Math.abs(d.kalanGun)} gün geçti` : `${d.kalanGun} gün kaldı`;
+  return d;
+}
+function kisiBelgeleri(personelId){
+  return BELGE_SIRA.map(t => belgeDurumu(personelId, t)).filter(Boolean);
+}
+function belgeUyariSayisi(){
+  let n = 0;
+  D.personel.filter(p => p.aktif).forEach(p =>
+    kisiBelgeleri(p.id).forEach(b => { if(b.seviye==='gecti' || b.seviye==='yakin') n++; }));
+  return n;
+}
+function belgeRozetiTazele(){
+  const btn = $$('#nav button').find(b => b.dataset.k === 'personel');
+  if(!btn) return;
+  btn.querySelector('.rozetSayi')?.remove();
+  const n = belgeUyariSayisi();
+  if(!n) return;
+  const s = document.createElement('span');
+  s.className = 'rozetSayi'; s.textContent = n;
+  s.title = `${n} sürücü belgesi dikkat istiyor`;
+  btn.appendChild(s);
+}
+/* listede yer kaplamasın: yalnızca süresi geçmiş ya da yaklaşanlar görünür */
+function belgeUyariHtml(personelId){
+  const dikkat = kisiBelgeleri(personelId).filter(b => b.seviye==='gecti' || b.seviye==='yakin');
+  if(!dikkat.length) return '';
+  return `<div class="bakimSatir">${dikkat.map(b =>
+    `<span class="bakimRozet r-${b.seviye}">${esc(b.ad)}: ${esc(b.metin)}</span>`).join('')}</div>`;
+}
+function belgeAc(personelId){
+  const p = kisi(personelId);
+  if(!p) return;
+  const durum = kisiBelgeleri(personelId);
+  const kalem = b => {
+    const gecmis = D.belgeKayit.filter(k => k.personel_id===personelId && k.tur===b.tur).slice(0,3);
+    return `<div class="bakimKalem">
+      <div class="bas">
+        <b>${esc(b.ad)}</b>
+        <span class="bakimRozet r-${b.seviye}">${esc(b.metin)}</span>
+        <div class="bosluk"></div>
+        <span class="mini">${b.hedefTarih?`son gün ${trTarih(b.hedefTarih)}`:''}</span>
+      </div>
+      <div class="satir" style="gap:8px">
+        <div class="alan" style="flex:1;min-width:130px;margin:0"><label class="mini">Geçerlilik (ay)</label>
+          <input type="number" min="0" data-p="${b.plan.id}" data-f="periyot_ay" value="${b.plan.periyot_ay??''}"></div>
+        <div class="alan" style="flex:1;min-width:130px;margin:0"><label class="mini">Kaç gün kala uyar</label>
+          <input type="number" min="0" data-p="${b.plan.id}" data-f="uyari_gun" value="${b.plan.uyari_gun??0}"></div>
+      </div>
+      ${gecmis.length ? `<div class="bakimGecmis">${gecmis.map(k=>`<div>
+        ${trTarih(k.tarih)}${k.gecerlilik_bitis?` · geçerlilik ${trTarih(k.gecerlilik_bitis)}`:''}
+        ${k.belge_no?` · no ${esc(k.belge_no)}`:''}${k.veren?` · ${esc(k.veren)}`:''}
+        <button class="btn tehlike kucuk" style="padding:1px 7px;font-size:11px;margin-left:6px"
+                onclick="belgeKayitSil('${k.id}','${personelId}')">sil</button></div>`).join('')}</div>`
+        : `<div class="bakimGecmis">Henüz kayıt yok — aşağıdan gir.</div>`}
+    </div>`;
+  };
+  modalAc(`${p.ad_soyad} — belgeler`, `
+    <div class="mesaj bilgi" style="margin-bottom:14px">Geçerlilik süreleri <b>tahmini başlangıç değerleridir</b>.
+    Belgenin üstündeki bitiş tarihini girersen süre hesabı yerine o tarih kullanılır.
+    Kesin süreleri ve hangi belgelerin arandığını Konya Büyükşehir'den teyit et — kural ilden ile değişiyor.</div>
+    ${durum.map(kalem).join('')}
+    <div style="border-top:2px solid var(--line);margin-top:16px;padding-top:14px">
+      <h4 style="margin:0 0 10px">Yeni kayıt — belge alındı / yenilendi</h4>
+      <div class="satir">
+        <div class="alan" style="flex:1;min-width:170px"><label>Belge</label><select id="glTur">
+          ${BELGE_SIRA.map(t=>`<option value="${t}">${BELGE_AD[t]}</option>`).join('')}
+        </select></div>
+        <div class="alan" style="flex:1;min-width:130px"><label>Alınma tarihi</label>
+          <input id="glTarih" type="date" value="${bugunTarih()}"></div>
+        <div class="alan" style="flex:1;min-width:130px"><label>Geçerlilik bitişi</label>
+          <input id="glBitis" type="date"></div>
+      </div>
+      <div class="satir">
+        <div class="alan" style="flex:1;min-width:130px"><label>Belge no</label><input id="glNo"></div>
+        <div class="alan" style="flex:1;min-width:150px"><label>Veren kurum</label><input id="glVeren"></div>
+      </div>
+      <div id="glDurum"></div>
+    </div>`,
+    [{ad:'Kapat', sinif:'ikincil', is:()=>true},
+     {ad:'Süreleri kaydet', sinif:'ikincil', is: async () => {
+        const guncel = {};
+        $('#modalYuva').querySelectorAll('[data-p]').forEach(el => {
+          (guncel[el.dataset.p] ||= {})[el.dataset.f] = el.value === '' ? null : Number(el.value);
+        });
+        for(const [id, alanlar] of Object.entries(guncel)){
+          const r = await sb.from('belge_plani').update(alanlar).eq('id', id);
+          if(r.error){ mesaj('#glDurum','hata', esc(r.error.message)); return false; }
+        }
+        await verileriYukle(); belgeAc(personelId); return false;
+     }},
+     {ad:'Kaydı ekle', is: async () => {
+        const k = { personel_id: personelId, tur: $('#glTur').value, tarih: $('#glTarih').value,
+          gecerlilik_bitis: $('#glBitis').value || null,
+          belge_no: $('#glNo').value.trim() || null, veren: $('#glVeren').value.trim() || null };
+        if(!k.tarih){ mesaj('#glDurum','hata','Tarih gerekli.'); return false; }
+        const r = await sb.from('belge_kayit').insert(k);
+        if(r.error){ mesaj('#glDurum','hata', esc(r.error.message)); return false; }
+        await verileriYukle(); belgeAc(personelId); return false;
+     }}]);
+}
+async function belgeKayitSil(id, personelId){
+  if(!confirm('Bu kayıt silinsin mi?')) return;
+  await sb.from('belge_kayit').delete().eq('id', id);
+  await verileriYukle(); belgeAc(personelId);
+}
+
+/* araç kartındaki özet: sadece dikkat isteyenler, hepsi yolundaysa tek satır */
+function bakimOzetHtml(v){
+  const hepsi = aracBakimlari(v.id);
+  if(!hepsi.length) return '';
+  const g = guncelKm(v.id);
+  const kmSatir = g
+    ? `<div class="mini" style="margin-top:8px">Kilometre: <b>${g.tahmini?'≈ ':''}${sy(g.km,0)}</b>
+       <span style="color:var(--ink-3)">(son okuma ${sy(g.okuma,0)} · ${trTarih(g.okumaTarih)}${g.tahmini?` · ${g.gun} iş günü tahmini eklendi`:''})</span></div>`
+    : `<div class="mini" style="margin-top:8px;color:var(--ink-3)">Kilometre okuması girilmemiş — Aylık Kontrol'den gir.</div>`;
+  const dikkat = hepsi.filter(b => b.seviye==='gecti' || b.seviye==='yakin' || b.seviye==='bilinmiyor');
+  const rozet = b => `<span class="bakimRozet r-${b.seviye}">${esc(b.ad)}: ${esc(b.metin)}</span>`;
+  return kmSatir + `<div class="bakimSatir">
+    ${dikkat.length ? dikkat.map(rozet).join('')
+      : `<span class="bakimRozet r-iyi">Bakım ve belgeler güncel</span>`}
+  </div>`;
+}
+
 function cizAraclar(){
+  bakimRozetiTazele();
   $('#aracListe').innerHTML = D.araclar.map(v => {
     const s = kisi(v.sofor_id);
     const r = D.rotalar.find(x => x.arac_id===v.id);
@@ -1292,6 +1602,7 @@ function cizAraclar(){
         <span class="etiket e-${v.yakit}">${YAKIT_AD[v.yakit]}</span>
         ${v.aktif?'':'<span class="etiket e-pasif">pasif</span>'}
         <div class="bosluk"></div>
+        <button class="btn ikincil kucuk yetki" onclick="bakimAc('${v.id}')">Bakım &amp; belge</button>
         <button class="btn ikincil kucuk yetki" onclick="aracDuzenle('${v.id}')">Düzenle</button>
       </div>
       <div class="mini" style="margin-bottom:10px">${esc(v.marka||'')} ${esc(v.model||'')}</div>
@@ -1307,6 +1618,7 @@ function cizAraclar(){
         Şoför: <b>${esc(s?s.ad_soyad:'atanmadı')}</b>
         ${r?` · Güzergahta <b>${sy(r.toplam_km,1)} km</b>` : ' · <span style="color:var(--ink-3)">güzergahta kullanılmıyor</span>'}
       </div>
+      ${bakimOzetHtml(v)}
       ${v.notlar?`<div class="mini" style="margin-top:6px;font-style:italic">${esc(v.notlar)}</div>`:''}
     </div>`;
   }).join('') || '<div class="ip">Araç yok</div>';
@@ -1362,6 +1674,144 @@ function aracDuzenle(id){
     ].filter(Boolean));
 }
 $('#aracEkleBtn').addEventListener('click', () => aracDuzenle(null));
+
+/* ---- Bakım ve belge ekranı: aracın kendi kartından açılır ---- */
+function bakimAc(aracId){
+  const v = arac(aracId);
+  if(!v) return;
+  const g = guncelKm(aracId);
+  const durum = aracBakimlari(aracId);
+  const kmBilgi = g
+    ? `Kilometre <b>${g.tahmini?'≈ ':''}${sy(g.km,0)}</b> — son okuma ${sy(g.okuma,0)} (${trTarih(g.okumaTarih)})${
+        g.tahmini?`, üzerine ${g.gun} iş günü × ${sy(gunlukRotaKm(aracId),1)} km servis eklendi`:''}.
+       Tahmin yalnızca servis güzergahını sayar; şoförün başka kullanımı varsa gerçek km daha yüksektir.`
+    : `Bu araç için kilometre okuması yok. <b>Aylık Kontrol</b> sekmesinden km girersen kilometreye bağlı
+       bakımlar (yağ-filtre, lastik) takip edilebilir.`;
+
+  const kalem = b => {
+    const p = b.plan;
+    const gecmis = D.bakimKayit.filter(k => k.arac_id===aracId && k.tur===b.tur).slice(0,3);
+    return `<div class="bakimKalem">
+      <div class="bas">
+        <b>${esc(b.ad)}</b>
+        <span class="bakimRozet r-${b.seviye}">${esc(b.metin)}</span>
+        <div class="bosluk"></div>
+        <span class="mini">${b.hedefKm!=null?`hedef ${sy(b.hedefKm,0)} km`:''}${
+          b.hedefKm!=null && b.hedefTarih ? ' · ' : ''}${b.hedefTarih?`son gün ${trTarih(b.hedefTarih)}`:''}</span>
+      </div>
+      <div class="satir" style="gap:8px">
+        ${BAKIM_KM_TABANLI.includes(b.tur)
+          ? `<div class="alan" style="flex:1;min-width:110px;margin:0"><label class="mini">Periyot (km)</label>
+             <input type="number" min="0" data-p="${p.id}" data-f="periyot_km" value="${p.periyot_km??''}"></div>` : ''}
+        <div class="alan" style="flex:1;min-width:100px;margin:0"><label class="mini">Periyot (ay)</label>
+          <input type="number" min="0" data-p="${p.id}" data-f="periyot_ay" value="${p.periyot_ay??''}"></div>
+        ${BAKIM_KM_TABANLI.includes(b.tur)
+          ? `<div class="alan" style="flex:1;min-width:100px;margin:0"><label class="mini">Kaç km kala uyar</label>
+             <input type="number" min="0" data-p="${p.id}" data-f="uyari_km" value="${p.uyari_km??0}"></div>` : ''}
+        <div class="alan" style="flex:1;min-width:100px;margin:0"><label class="mini">Kaç gün kala uyar</label>
+          <input type="number" min="0" data-p="${p.id}" data-f="uyari_gun" value="${p.uyari_gun??0}"></div>
+      </div>
+      ${gecmis.length ? `<div class="bakimGecmis">${gecmis.map(k=>`<div>
+        ${trTarih(k.tarih)}${k.km!=null?` · ${sy(k.km,0)} km`:''}${k.gecerlilik_bitis?` · geçerlilik ${trTarih(k.gecerlilik_bitis)}`:''}
+        ${k.yapilan?` · ${esc(k.yapilan)}`:''}${k.servis?` · ${esc(k.servis)}`:''}${k.tutar!=null?` · <b>${tl(k.tutar)}</b>`:''}
+        <button class="btn tehlike kucuk" style="padding:1px 7px;font-size:11px;margin-left:6px"
+                onclick="bakimKayitSil('${k.id}','${aracId}')">sil</button></div>`).join('')}</div>`
+        : `<div class="bakimGecmis">Henüz kayıt yok — aşağıdan ilkini gir.</div>`}
+    </div>`;
+  };
+
+  const gb = gercekBakimKm(aracId);
+  const tahmin = bakimKm(v);
+  const gercekSatir = !gb ? `<div class="mini" style="margin-bottom:14px">
+      Güzergah hesabında bu araç için kullanılan bakım payı: <b>${tl(tahmin)}/km</b> — bu bir tahmin.
+      Tutarlı bakım kayıtları girdikçe program gerçek rakamı hesaplayıp burada önerir.</div>`
+    : gb.yetersiz ? `<div class="mini" style="margin-bottom:14px">
+      ${gb.adet} kayıt var (${tl(gb.toplam)}) ama henüz ${sy(gb.aralik,0)} km'lik bir aralığı kapsıyor —
+      sağlıklı bir ₺/km için en az 1.000 km gerekiyor. Hesapta tahmini değer kullanılıyor: <b>${tl(tahmin)}/km</b>.</div>`
+    : `<div class="mesaj ${Math.abs(gb.tlKm-tahmin) > tahmin*0.2 ? 'uyari':'iyi'}" style="margin-bottom:14px">
+      <b>Kayıtlı</b> bakım harcaması: <b>${tl(gb.tlKm)}/km</b>
+      (${gb.adet} kayıt · ${tl(gb.toplam)} · ${sy(gb.aralik,0)} km).
+      Güzergah hesabında şu an <b>${tl(tahmin)}/km</b> kullanılıyor.
+      ${Math.abs(gb.tlKm-tahmin) > tahmin*0.2
+        ? `<button class="btn kucuk" style="margin-left:8px" onclick="bakimPayiUygula('${aracId}', ${gb.tlKm})">Bu rakamı kullan</button>`
+        : 'İkisi birbirine yakın, değişiklik gerekmiyor.'}
+      <div class="mini" style="margin-top:6px">Bu sayı yalnızca <b>buraya girilen</b> faturaları sayar —
+      girmediğin lastik, fren, arıza gibi harcamalar dahil değil. Yani alt sınırdır, gerçek rakam bunun üstündedir.</div></div>`;
+
+  modalAc(`${v.plaka} — bakım ve belgeler`, `
+    <div class="mesaj ${g?'bilgi':'uyari'}" style="margin-bottom:14px">${kmBilgi}</div>
+    ${gercekSatir}
+    ${durum.map(kalem).join('')}
+    <div style="border-top:2px solid var(--line);margin-top:16px;padding-top:14px">
+      <h4 style="margin:0 0 4px">Yeni kayıt — bakım yapıldı / belge yenilendi</h4>
+      <p class="mini" style="margin:0 0 10px">Bir sonraki tarih bu kayıttan hesaplanır.
+      Belgelerde <b>geçerlilik bitişi</b> girersen periyottan bağımsız olarak o tarih kullanılır.</p>
+      <div class="satir">
+        <div class="alan" style="flex:1;min-width:150px"><label>Ne yapıldı</label><select id="bkTur">
+          ${BAKIM_SIRA.map(t=>`<option value="${t}">${BAKIM_AD[t]}</option>`).join('')}
+        </select></div>
+        <div class="alan" style="flex:1;min-width:130px"><label>Tarih</label>
+          <input id="bkTarih" type="date" value="${bugunTarih()}"></div>
+      </div>
+      <div class="satir">
+        <div class="alan" style="flex:1;min-width:130px"><label>Km (o anki)</label>
+          <input id="bkKm" type="number" min="0" placeholder="${g?Math.round(g.km):''}"></div>
+        <div class="alan" style="flex:1;min-width:150px"><label>Geçerlilik bitişi (belgeler)</label>
+          <input id="bkBitis" type="date"></div>
+      </div>
+      <div class="satir">
+        <div class="alan" style="flex:1;min-width:150px"><label>Yapılan iş / açıklama</label>
+          <input id="bkYapilan" placeholder="yağ + yağ filtresi + hava filtresi"></div>
+        <div class="alan" style="flex:1;min-width:130px"><label>Servis</label><input id="bkServis"></div>
+        <div class="alan" style="flex:1;min-width:110px"><label>Tutar (₺)</label>
+          <input id="bkTutar" type="number" step="0.01" min="0"></div>
+      </div>
+      <div id="bkDurum"></div>
+    </div>`,
+    [{ad:'Kapat', sinif:'ikincil', is:()=>true},
+     {ad:'Periyotları kaydet', sinif:'ikincil', is: async () => {
+        const yuva = $('#modalYuva');
+        const guncel = {};
+        yuva.querySelectorAll('[data-p]').forEach(el => {
+          (guncel[el.dataset.p] ||= {})[el.dataset.f] = el.value === '' ? null : Number(el.value);
+        });
+        for(const [id, alanlar] of Object.entries(guncel)){
+          if(alanlar.periyot_km == null && alanlar.periyot_ay == null){
+            mesaj('#bkDurum','hata','Her kalemde en az bir periyot (km veya ay) dolu olmalı.'); return false;
+          }
+          const r = await sb.from('bakim_plani').update(alanlar).eq('id', id);
+          if(r.error){ mesaj('#bkDurum','hata', esc(r.error.message)); return false; }
+        }
+        await verileriYukle(); bakimAc(aracId); return false;
+     }},
+     {ad:'Kaydı ekle', is: async () => {
+        const k = {
+          arac_id: aracId, tur: $('#bkTur').value, tarih: $('#bkTarih').value,
+          km: $('#bkKm').value === '' ? null : Number($('#bkKm').value),
+          gecerlilik_bitis: $('#bkBitis').value || null,
+          yapilan: $('#bkYapilan').value.trim() || null,
+          servis: $('#bkServis').value.trim() || null,
+          tutar: $('#bkTutar').value === '' ? null : Number($('#bkTutar').value)
+        };
+        if(!k.tarih){ mesaj('#bkDurum','hata','Tarih gerekli.'); return false; }
+        if(BAKIM_KM_TABANLI.includes(k.tur) && k.km == null){
+          mesaj('#bkDurum','hata','Kilometreye bağlı bir bakım için o anki km gerekli.'); return false;
+        }
+        const r = await sb.from('bakim_kayit').insert(k);
+        if(r.error){ mesaj('#bkDurum','hata', esc(r.error.message)); return false; }
+        await verileriYukle(); bakimAc(aracId); return false;
+     }}]);
+}
+async function bakimPayiUygula(aracId, tlKm){
+  const r = await sb.from('araclar').update({bakim_km_maliyet: +Number(tlKm).toFixed(2)}).eq('id', aracId);
+  if(r.error){ alert(r.error.message); return; }
+  await verileriYukle(); bakimAc(aracId);
+}
+async function bakimKayitSil(id, aracId){
+  if(!confirm('Bu kayıt silinsin mi?')) return;
+  await sb.from('bakim_kayit').delete().eq('id', id);
+  await verileriYukle(); bakimAc(aracId);
+}
 
 /* =========================================================
    GÜZERGAH OPTİMİZASYONU
@@ -1624,7 +2074,8 @@ function serviste(p, tarih, yon){
 }
 function planTarihi(){ return $('#planTarih').value || new Date().toISOString().slice(0,10); }
 
-async function optimizeEt(){
+async function optimizeEt(zorunluAraclar){
+  if(!Array.isArray(zorunluAraclar)) zorunluAraclar = null;
   const a = D.ayarlar;
   const btn = $('#optimizeBtn'); btn.disabled = true;
   const durum = m => mesaj('#optDurum','uyari', m);
@@ -1662,9 +2113,13 @@ async function optimizeEt(){
 
     durum('Araç–personel kombinasyonları deneniyor…');
     let enIyi = null, enUcuz = null;
+    const adaylar = [];
     const n = araclar.length;
     for(let maske=1; maske < (1<<n); maske++){
       const alt = araclar.filter((_,i) => maske & (1<<i));
+      // kullanıcı belirli araçları seçtiyse yalnızca o kombinasyon denenir
+      if(zorunluAraclar && (alt.length !== zorunluAraclar.length ||
+         !alt.every(v => zorunluAraclar.includes(v.id)))) continue;
       const soforIds = alt.map(v => v.sofor_id);
       const gYolcu = gidisKisi.filter(p => !soforIds.includes(p.id)).map(p => p.id);
       const dYolcu = donusKisi.filter(p => !soforIds.includes(p.id)).map(p => p.id);
@@ -1683,8 +2138,10 @@ async function optimizeEt(){
         dakika: gid.dakika + don.dakika, zaman: gid.zaman + don.zaman,
         uygun: gid.uygun && don.uygun,
         enUzun: Math.max(gid.enUzun, don.enUzun),
-        aracSayisi: alt.length, km: gid.km + don.km
+        aracSayisi: alt.length, km: gid.km + don.km,
+        alt, adlar: alt.map(v => v.plaka).join(' + ')
       };
+      adaylar.push(aday);
       if(!enIyi) enIyi = aday;
       else{
         const daha = (aday.uygun && !enIyi.uygun) ||
@@ -1698,6 +2155,12 @@ async function optimizeEt(){
 
     durum('Güzergah çizgileri hazırlanıyor…');
     await rotalariKaydet(enIyi, tarih, gun, {basSaat, bitSaat, havaG, havaD});
+    // Denenen bütün kombinasyonları sakla: "neden bu plan" ekranda görünsün,
+    // istenirse başka bir kombinasyon elle uygulanabilsin.
+    if(!zorunluAraclar) await planSecenekleriKaydet(adaylar, enIyi, tarih, gun);
+    else await sb.from('plan_secenek').update({secili:false}).neq('id','00000000-0000-0000-0000-000000000000')
+           .then(() => sb.from('plan_secenek').update({secili:true})
+             .eq('arac_adlari', enIyi.adlar));
     D.sonOpt = enIyi;
     await verileriYukle();
     sekmeAc('guzergah');
@@ -1723,9 +2186,101 @@ async function optimizeEt(){
     mesaj('#optDurum','hata', esc(e.message));
   }finally{ btn.disabled = false; }
 }
-$('#optimizeBtn').addEventListener('click', optimizeEt);
+$('#optimizeBtn').addEventListener('click', () => optimizeEt());   // tıklama nesnesi parametre olarak geçmesin
 $('#planTarih').addEventListener('change', cizGunlukDurum);
 $('#fiyatCekBtn').addEventListener('click', () => fiyatCek(false));
+
+async function planSecenekleriKaydet(adaylar, secilen, tarih, gun){
+  await sb.from('plan_secenek').delete().neq('id','00000000-0000-0000-0000-000000000000');
+  if(!adaylar.length) return;
+  const satirlar = adaylar.map(x => ({
+    plan_tarihi: tarih,
+    arac_idler: x.alt.map(v => v.id),
+    arac_adlari: x.adlar,
+    arac_sayisi: x.aracSayisi,
+    km: +x.km.toFixed(2),
+    yakit_ay: +(x.yakit*gun).toFixed(2),
+    bakim_ay: +(x.bakim*gun).toFixed(2),
+    cep_ay:   +x.aylik.toFixed(2),
+    kisi_dakika: +x.dakika.toFixed(1),
+    zaman_ay: +(x.zaman*gun).toFixed(2),
+    en_uzun_dk: +x.enUzun.toFixed(1),
+    uygun: x.uygun,
+    secili: x === secilen
+  }));
+  await sb.from('plan_secenek').insert(satirlar);
+}
+
+/* ---- "Neden bu plan?" — denenen bütün kombinasyonlar ve farkları ---- */
+function cizPlanSecenekleri(){
+  const kap = $('#planSecenek');
+  if(!kap) return;
+  const s = D.planSecenek || [];
+  if(s.length < 2){ kap.innerHTML = ''; return; }
+  const maxDk = Number(D.ayarlar.max_servis_dk) || 45;
+  const secili = s.find(x => x.secili) || s[0];
+  const sirali = s.slice().sort((a,b) => (b.uygun - a.uygun) || (a.cep_ay - b.cep_ay));
+
+  // gerekçe cümlesi
+  const digerUygun = sirali.filter(x => x.uygun && x !== secili);
+  const ucuzAmaUzun = s.filter(x => !x.uygun && Number(x.cep_ay) < Number(secili.cep_ay) - 1)
+                       .sort((a,b) => a.cep_ay - b.cep_ay)[0];
+  const gerekce = [];
+  gerekce.push(`<b>${esc(secili.arac_adlari)}</b> seçildi — süre limitine uyan seçenekler içinde
+    yakıt + bakım + personel zamanı toplamı en düşük olan bu.`);
+  if(ucuzAmaUzun){
+    const fark = Number(secili.cep_ay) - Number(ucuzAmaUzun.cep_ay);
+    gerekce.push(`<b>${esc(ucuzAmaUzun.arac_adlari)}</b> cepten ayda <b>${tl(fark)}</b> daha ucuz
+      ama en uzun yolculuk <b>${sy(ucuzAmaUzun.en_uzun_dk,0)} dk</b> — limit ${maxDk} dk olduğu için elendi.
+      Limiti ${Math.ceil(ucuzAmaUzun.en_uzun_dk)} dk yaparsan bu seçenek açılır.`);
+  }
+  if(!digerUygun.length && !ucuzAmaUzun)
+    gerekce.push('Diğer kombinasyonlar ya kapasiteye sığmıyor ya da hem daha pahalı hem daha uzun.');
+
+  kap.innerHTML = `
+    <h3 style="margin:22px 0 4px">Neden bu plan?</h3>
+    <p class="mini" style="margin:0 0 12px">Program aşağıdaki kombinasyonların hepsini denedi.
+    İstersen başka birini elle uygulayabilirsin — karar senin.</p>
+    <div class="mesaj bilgi">${gerekce.join('<br>')}</div>
+    <div style="overflow-x:auto">
+    <table style="background:var(--card);border:1px solid var(--line);border-radius:var(--r)"><thead><tr>
+      <th>Araçlar</th><th class="sag">km/gün</th><th class="sag">Yakıt ₺/ay</th>
+      <th class="sag">Bakım ₺/ay</th><th class="sag">Cepten ₺/ay</th>
+      <th class="sag">Fark</th><th class="sag">Kişi-dk</th><th class="sag">En uzun</th><th></th>
+    </tr></thead><tbody>
+    ${sirali.map(x => {
+      const bu = x.secili;
+      const fark = Number(x.cep_ay) - Number(secili.cep_ay);
+      return `<tr style="${bu?'background:#eef3f9;font-weight:600':''}">
+        <td>${bu?'▸ ':''}${esc(x.arac_adlari)}
+          ${x.uygun?'':'<span class="etiket e-yok" style="margin-left:6px">süre aşımı</span>'}</td>
+        <td class="sag mono">${sy(x.km,1)}</td>
+        <td class="sag mono">${tl(x.yakit_ay)}</td>
+        <td class="sag mono">${tl(x.bakim_ay)}</td>
+        <td class="sag mono">${tl(x.cep_ay)}</td>
+        <td class="sag mono" style="color:${Math.abs(fark)<1?'var(--ink-3)':(fark>0?'#9b2620':'#0b6b3c')}">
+          ${bu ? '—' : (fark>0?'+':'') + tl(fark)}</td>
+        <td class="sag mono">${sy(x.kisi_dakika,0)}</td>
+        <td class="sag mono" style="${x.uygun?'':'color:#9b2620'}">${sy(x.en_uzun_dk,0)} dk</td>
+        <td class="sag">${bu ? '<span class="etiket e-ok">uygulandı</span>'
+          : `<button class="btn ikincil kucuk yetki" onclick="planUygula('${x.id}')">Bu planı uygula</button>`}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>
+    <p class="mini" style="margin-top:10px">
+    <b>Cepten</b> = yakıt + bakım/aşınma, ${D.ayarlar.calisma_gunu_sayisi||22} iş günü üzerinden.
+    <b>Kişi-dk</b> = personelin günde serviste geçirdiği toplam dakika (şoförler dahil).
+    <b>En uzun</b> = tek bir kişinin tek yönde araçta geçirdiği en uzun süre; limit ${maxDk} dk.
+    Sıralamada program bu üçünü birlikte tartar, sadece paraya bakmaz.</p>`;
+  if(!yazabilir()) $$('.yetki').forEach(b => b.classList.add('hide'));
+}
+async function planUygula(id){
+  const x = (D.planSecenek||[]).find(y => y.id === id);
+  if(!x) return;
+  if(!confirm(`${x.arac_adlari} planı uygulansın mı?\n\nGüzergahlar bu araçlarla yeniden hesaplanacak.`
+    + (x.uygun ? '' : `\n\nDikkat: bu seçenekte en uzun yolculuk ${Math.round(x.en_uzun_dk)} dk, limitin üstünde.`))) return;
+  await optimizeEt(x.arac_idler);
+}
 
 async function rotalariKaydet(sonuc, tarih, gun, z){
   await sb.from('rotalar').delete().neq('id','00000000-0000-0000-0000-000000000000');
@@ -1839,6 +2394,44 @@ function rotaKoordinatlari(r){
     const p = kisi(d.personel_id); return p ? `${p.lat},${p.lng}` : '';
   }).filter(Boolean);
 }
+/* ---- Şoförün girişsiz açabileceği güzergah sayfası ---- */
+function soforLinkAdresi(kod){
+  return location.href.split('?')[0].split('#')[0].replace(/[^/]*$/, 'rota.html') + '?k=' + kod;
+}
+function soforLinkiAc(aracId, yon){
+  const v = arac(aracId);
+  const b = D.baglantilar.find(x => x.arac_id === aracId && x.yon === yon);
+  if(!b){
+    modalAc('Şoför sayfası', `<div class="mesaj uyari">Bu araç için paylaşım bağlantısı bulunamadı.
+      Aracı yeni eklediysen sayfayı yenile.</div>`, [{ad:'Kapat', sinif:'ikincil', is:()=>true}]);
+    return;
+  }
+  const adres = soforLinkAdresi(b.kod);
+  modalAc(`${v?v.plaka:''} — şoför sayfası (${yon==='gidis'?'gidiş':'dönüş'})`, `
+    <p class="mini" style="margin-top:0">Bu linki şoföre WhatsApp'tan gönder. <b>Giriş gerektirmez</b>,
+    telefonda açılır: durak sırası, biniş saatleri, harita ve her durak için yol tarifi.
+    Güzergahı yeniden hesapladığında link aynı kalır, sayfa kendiliğinden güncellenir.</p>
+    <div class="alan"><label>Bağlantı</label>
+      <input id="slAdres" readonly value="${esc(adres)}" onclick="this.select()"></div>
+    <div class="mesaj bilgi">Linke sahip olan herkes bu aracın durak adreslerini görebilir —
+    telefon numaraları paylaşılmaz. Link yanlış kişiye gittiyse aşağıdan yenile: eski link anında geçersiz olur.</div>
+    <div id="slDurum"></div>`,
+    [{ad:'Kapat', sinif:'ikincil', is:()=>true},
+     {ad:'Linki yenile', sinif:'tehlike', is: async () => {
+        if(!confirm('Eski link geçersiz olacak, şoföre yenisini göndermen gerekecek. Devam?')) return false;
+        const yeni = [...crypto.getRandomValues(new Uint8Array(16))]
+          .map(x => x.toString(16).padStart(2,'0')).join('');
+        const r = await sb.from('rota_baglanti').update({kod:yeni}).eq('id', b.id);
+        if(r.error){ mesaj('#slDurum','hata', esc(r.error.message)); return false; }
+        await verileriYukle(); soforLinkiAc(aracId, yon); return false;
+     }},
+     {ad:'Kopyala', is: async () => {
+        try{ await navigator.clipboard.writeText(adres); mesaj('#slDurum','iyi','Kopyalandı.'); }
+        catch(e){ $('#slAdres').select(); mesaj('#slDurum','uyari','Kopyalanamadı — kutudaki adresi elle kopyala.'); }
+        return false;
+     }}]);
+}
+
 function rotaKartHtml(r, renk){
   const v = arac(r.arac_id), s = kisi(r.sofor_id);
   const dur = rotaDuraklari(r);
@@ -1853,6 +2446,7 @@ function rotaKartHtml(r, renk){
       <a class="btn kucuk ikincil yazdirma-gizle" href="${kml}" target="_blank" rel="noopener">Haritada aç</a>
       <button class="btn kucuk ikincil yazdirma-gizle" onclick="linkKopyala('${kml}', this)">Linki kopyala</button>
       <button class="btn kucuk ikincil yazdirma-gizle" onclick="mesajKopyala('${r.id}', this)">Mesaj metni</button>
+      <button class="btn kucuk yazdirma-gizle" onclick="soforLinkiAc('${r.arac_id}','${r.yon||'gidis'}')">Şoför sayfası</button>
     </div>
     <div class="rota-ozet">
       <div><span class="mini">Mesafe</span><b>${sy(r.toplam_km,1)} km</b></div>

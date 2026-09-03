@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#005791">
+<title>Güzergah</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --navy:#005791; --amber:#f5a623;
+  --bg:#f8f6f1; --card:#fff; --line:#e3e0d8;
+  --ink:#1c2530; --ink-2:#5c6068; --ink-3:#757873;
+  --r:12px; --sh:0 1px 2px rgba(20,30,45,.06);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.ust{background:var(--navy);color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px))}
+.ust .firma{font-size:12px;opacity:.75;letter-spacing:.4px;text-transform:uppercase}
+.ust .plaka{font-size:22px;font-weight:800;letter-spacing:.6px;margin-top:2px}
+.ust .alt{font-size:13px;opacity:.9;margin-top:3px}
+.yonEtiket{display:inline-block;background:rgba(255,255,255,.2);border-radius:20px;
+  padding:2px 10px;font-size:12px;font-weight:700;letter-spacing:.5px;margin-top:8px}
+.sar{max-width:640px;margin:0 auto;padding:14px 12px 40px}
+.kart{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--sh);padding:14px;margin-bottom:12px}
+.ozet{display:flex;gap:10px;flex-wrap:wrap}
+.ozet div{flex:1;min-width:88px}
+.ozet .et{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.ozet .dg{font-size:19px;font-weight:800;line-height:1.2;margin-top:1px}
+#harita{height:280px;border-radius:var(--r);border:1px solid var(--line);margin-bottom:12px;background:#e9e6df}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--navy);
+  margin:18px 0 9px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+.durak{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.durak:last-child{border-bottom:0}
+.no{flex:none;width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+.no.fab{background:var(--amber);color:#3a2600}
+.durak .govde{flex:1;min-width:0}
+.durak .ad{font-weight:700;font-size:15px}
+.durak .adres{font-size:13px;color:var(--ink-2);margin-top:2px}
+.durak .yer{font-size:12px;color:var(--ink-3);margin-top:1px}
+.durak .sag{flex:none;text-align:right}
+.saat{font-variant-numeric:tabular-nums;font-weight:800;font-size:16px;color:var(--navy)}
+.bacak{font-size:11px;color:var(--ink-3);margin-top:2px;white-space:nowrap}
+.git{display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:6px 11px;
+  border:1px solid var(--line);border-radius:20px;background:#fff;color:var(--navy);
+  font-size:12.5px;font-weight:700;text-decoration:none}
+.git:active{background:#eef3f9}
+.btn{display:block;width:100%;text-align:center;padding:13px;border-radius:11px;
+  background:var(--navy);color:#fff;font-weight:800;text-decoration:none;font-size:15px;border:0}
+.not{font-size:12px;color:var(--ink-3);margin-top:14px;text-align:center;line-height:1.6}
+.mesaj{padding:12px 14px;border-radius:10px;font-size:14px}
+.mesaj.hata{background:#fdeceb;color:#8f1f19;border:1px solid #f6ccc8}
+.mesaj.uyari{background:#fdf4e3;color:#7a5410;border:1px solid #f2e0bb}
+.hava{font-size:12.5px;color:#7a5410;background:#fdf4e3;border:1px solid #f2e0bb;
+  border-radius:9px;padding:8px 11px;margin-bottom:12px}
+.yukleniyor{text-align:center;color:var(--ink-3);padding:50px 20px}
+</style>
+</head>
+<body>
+<div id="ust" class="ust" style="display:none">
+  <div class="firma" id="uFirma">—</div>
+  <div class="plaka" id="uPlaka">—</div>
+  <div class="alt" id="uAlt"></div>
+  <div class="yonEtiket" id="uYon"></div>
+</div>
+<div class="sar">
+  <div id="icerik"><div class="yukleniyor">Güzergah yükleniyor…</div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
+const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ss = t => t ? String(t).slice(0,5) : '—';
+const sy = (n,d=1) => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('tr-TR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const dk = n => { n = Math.round(Number(n)||0); return n < 60 ? n+' dk' : Math.floor(n/60)+' sa '+(n%60)+' dk'; };
+
+function hata(metin, tur){
+  $('#icerik').innerHTML = `<div class="mesaj ${tur||'hata'}">${metin}</div>`;
+}
+
+function navLink(lat, lng, ad){
+  // Google Maps yoksa cihaz kendi harita uygulamasına yönlendirir
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+}
+function tumGuzergahLink(duraklar, fabrika){
+  const nk = duraklar.filter(d => d.lat && d.lng).map(d => `${d.lat},${d.lng}`);
+  if(!nk.length) return null;
+  const bas = nk[0], son = nk[nk.length-1];
+  const ara = nk.slice(1,-1).slice(0,8);   // Google en fazla 9 ara nokta alır
+  return `https://www.google.com/maps/dir/?api=1&origin=${bas}&destination=${son}`
+       + (ara.length ? `&waypoints=${ara.join('|')}` : '') + '&travelmode=driving';
+}
+
+function ciz(v){
+  const gidis = v.yon === 'gidis';
+  $('#ust').style.display = '';
+  $('#uFirma').textContent = v.firma || 'Personel Servisi';
+  $('#uPlaka').textContent = v.plaka || '—';
+  $('#uAlt').textContent = [v.marka, v.sofor].filter(Boolean).join(' · ');
+  $('#uYon').textContent = gidis ? 'SABAH — GİDİŞ' : 'AKŞAM — DÖNÜŞ';
+  document.title = `${v.plaka} · ${gidis?'Gidiş':'Dönüş'}`;
+
+  const dur = (v.duraklar || []).slice().sort((a,b) => a.sira - b.sira);
+  const fab = v.fabrika || {};
+  const nokta = d => d.fabrika ? {lat:fab.lat, lng:fab.lng, ad:'FABRİKA'} :
+                     {lat:d.lat, lng:d.lng, ad:d.ad};
+
+  const satir = (d,i) => {
+    const n = nokta(d);
+    const fabrikaMi = d.fabrika;
+    const adres = fabrikaMi ? 'Üçel Yapısal Çelik' :
+      [d.adres, [d.mahalle, d.ilce].filter(Boolean).join(' · ')].filter(Boolean);
+    return `<div class="durak">
+      <div class="no ${fabrikaMi?'fab':''}">${fabrikaMi?'F':i}</div>
+      <div class="govde">
+        <div class="ad">${esc(fabrikaMi ? 'FABRİKA' : (d.ad || '—'))}</div>
+        ${fabrikaMi ? '<div class="adres">Üçel Yapısal Çelik</div>'
+          : `${d.adres?`<div class="adres">${esc(d.adres)}</div>`:''}
+             ${(d.mahalle||d.ilce)?`<div class="yer">${esc([d.mahalle,d.ilce].filter(Boolean).join(' · '))}</div>`:''}`}
+        ${(n.lat && n.lng) ? `<a class="git" href="${navLink(n.lat,n.lng)}" target="_blank" rel="noopener">▸ Yol tarifi</a>` : ''}
+      </div>
+      <div class="sag">
+        <div class="saat">${ss(d.binis_saat)}</div>
+        ${Number(d.mesafe_km) ? `<div class="bacak">${sy(d.mesafe_km,1)} km · ${dk(d.sure_dk)}</div>` : ''}
+      </div>
+    </div>`;
+  };
+
+  let i = 0;
+  const liste = dur.map(d => satir(d, d.fabrika ? 0 : ++i)).join('');
+  const tumLink = tumGuzergahLink(dur.map(nokta).filter(x=>x.lat&&x.lng), fab);
+
+  $('#icerik').innerHTML = `
+    ${v.hava_notu && v.pay_dk ? `<div class="hava">Hava: ${esc(v.hava_notu)} — güzergaha ${v.pay_dk} dk ek süre eklendi.</div>` : ''}
+    <div class="kart">
+      <div class="ozet">
+        <div><div class="et">${gidis?'İlk biniş':'Fabrikadan'}</div><div class="dg">${ss(v.ilk_binis_saat)}</div></div>
+        <div><div class="et">${gidis?'Fabrikada':'Son iniş'}</div><div class="dg">${ss(v.varis_saat)}</div></div>
+        <div><div class="et">Mesafe</div><div class="dg">${sy(v.toplam_km,1)}<span style="font-size:13px"> km</span></div></div>
+        <div><div class="et">Süre</div><div class="dg">${dk(v.toplam_sure_dk)}</div></div>
+      </div>
+    </div>
+    <div id="harita"></div>
+    ${tumLink ? `<a class="btn" href="${tumLink}" target="_blank" rel="noopener">Tüm güzergahı haritada aç</a>` : ''}
+    <h2>${gidis ? 'Alma sırası' : 'Bırakma sırası'}</h2>
+    <div class="kart" style="padding:4px 14px">${liste || '<div class="yukleniyor">Durak yok</div>'}</div>
+    <div class="not">
+      ${v.plan_tarihi ? `Plan tarihi ${new Date(v.plan_tarihi+'T00:00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'})}. ` : ''}
+      Güzergah değiştiğinde bu sayfa kendiliğinden güncellenir — linki saklaman yeterli.
+    </div>`;
+
+  harita(dur.map(nokta).filter(x => x.lat && x.lng), v.geometri, gidis);
+}
+
+function harita(noktalar, geometri, gidis){
+  if(typeof L === 'undefined' || !noktalar.length){ $('#harita').style.display='none'; return; }
+  try{
+    const m = L.map('harita', {scrollWheelZoom:false});
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(m);
+    let cizgi = null;
+    try{
+      const g = geometri ? JSON.parse(geometri) : null;
+      if(Array.isArray(g) && g.length) cizgi = g.map(c => [c[1], c[0]]);
+    }catch(e){}
+    if(cizgi) L.polyline(cizgi, {color:'#005791', weight:5, opacity:.8}).addTo(m);
+    noktalar.forEach((n,i) => {
+      const son = i === noktalar.length-1, ilk = i === 0;
+      const fab = n.ad === 'FABRİKA';
+      L.marker([n.lat, n.lng], {icon: L.divIcon({className:'', html:
+        `<div style="width:26px;height:26px;border-radius:50%;
+          background:${fab?'#f5a623':'#005791'};color:${fab?'#3a2600':'#fff'};
+          border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);
+          display:flex;align-items:center;justify-content:center;
+          font:700 12px system-ui">${fab?'F':(gidis?i+1:i)}</div>`,
+        iconSize:[26,26], iconAnchor:[13,13]})}).addTo(m).bindPopup(n.ad||'');
+    });
+    m.fitBounds(L.latLngBounds(cizgi || noktalar.map(n => [n.lat, n.lng])), {padding:[26,26]});
+  }catch(e){ $('#harita').style.display='none'; }
+}
+
+(async () => {
+  const kod = new URLSearchParams(location.search).get('k');
+  if(!kod){ hata('Bu bağlantı eksik. Yöneticinden güzergah linkini tekrar iste.','uyari'); return; }
+  if(typeof supabase === 'undefined'){
+    hata('Sayfa açılamadı — internet bağlantını kontrol edip tekrar dene.'); return;
+  }
+  try{
+    const sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}});
+    const { data, error } = await sb.rpc('rota_paylasim', {kod});
+    if(error) throw new Error(error.message);
+    if(!data){ hata('Bu bağlantı geçerli değil ya da iptal edilmiş. Yöneticinden yeni link iste.','uyari'); return; }
+    if(data.durum === 'rota_yok'){
+      hata(`<b>${esc(data.plaka||'')}</b> için ${data.yon==='gidis'?'gidiş':'dönüş'} güzergahı henüz hesaplanmamış.`,'uyari');
+      return;
+    }
+    ciz(data);
+  }catch(e){
+    hata('Güzergah alınamadı: ' + esc(e.message||'bilinmeyen hata'));
+  }
+})();
+</script>
+</body>
+</html>
