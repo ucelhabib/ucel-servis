@@ -540,11 +540,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '2.8';
+const SURUM = '2.9';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = '"Neden bu plan?" tablosu: denenen bütün araç kombinasyonları, aradaki fark ve '
-                 + 'istersen elle plan seçme. Bakım ve belge takibi araç kartında; sürücü belgeleri personel listesinde. '
-                 + 'Şoföre giriş gerektirmeyen güzergah linki.';
+const SURUM_NOTU = 'Otomatik güncelleme: yeni sürüm yayınlandığı an uygulama kendini yeniler, '
+                 + 'kapatıp açmaya gerek yok. Açık bir pencere ya da süren bir işlem varsa bitmesini bekler. '
+                 + 'Ayrıca "Neden bu plan?" karşılaştırma tablosu, bakım-belge takibi ve şoför güzergah linki.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -2905,38 +2905,81 @@ function modalAc(baslik, govde, dugmeler){
 }
 function modalKapat(){ $('#modalYuva').innerHTML = ''; }
 
-/* ================= OTOMATİK GÜNCELLEME ================= */
-/* Uygulama sunucudan yayınlandığında, yeni sürüm çıktığında haber verir. */
+/* ================= OTOMATİK GÜNCELLEME =================
+   Yeni sürüm yayınlandığında uygulama kendini yeniler — düğmeye basmaya,
+   kapatıp açmaya gerek yok. Tek istisna: o an bir modal açıksa, form
+   dolduruluyorsa ya da güzergah hesaplanıyorsa yenileme o iş bitene kadar
+   bekler; yarım kalmış bir kaydı yenileyip uçurmak güncellemeden önemlidir. */
 const SUNUCUDA = location.protocol.startsWith('http');
-let guncellemeBildirildi = false;
+let bulunanSurum = null, yenilemeBekliyor = false;
 
+function mesgulMu(){
+  if(document.querySelector('.modal-arka')) return 'açık pencere';
+  const btn = $('#optimizeBtn');
+  if(btn && btn.disabled) return 'süren hesaplama';
+  const a = document.activeElement;
+  if(a && ['INPUT','TEXTAREA','SELECT'].includes(a.tagName) && !a.readOnly) return 'doldurulan form';
+  return null;
+}
+async function hemenYenile(){
+  try{ sessionStorage.setItem('ucel-sekme', ($$('#nav button').find(b=>b.classList.contains('aktif'))||{}).dataset?.k || ''); }catch(e){}
+  try{ if(window.caches){ const k = await caches.keys(); await Promise.all(k.map(x => caches.delete(x))); } }catch(e){}
+  try{
+    if('serviceWorker' in navigator){
+      const rs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rs.map(r => r.update().catch(()=>{})));
+    }
+  }catch(e){}
+  location.reload();
+}
+function yenilemeyiDene(){
+  const engel = mesgulMu();
+  if(!engel){ hemenYenile(); return; }
+  if(yenilemeBekliyor) return;
+  yenilemeBekliyor = true;
+  guncellemeBandi(bulunanSurum, engel);
+  const t = setInterval(() => {
+    if(!mesgulMu()){ clearInterval(t); hemenYenile(); }
+  }, 2000);
+}
 async function surumKontrol(){
-  if(guncellemeBildirildi) return;
+  if(bulunanSurum) return;
   try{
     const r = await guvenliFetch(`${SB_URL}/functions/v1/app?surum=1&t=${Date.now()}`);
     const j = await r.json();
-    if(j && j.surum && j.surum !== SURUM){ guncellemeBildirildi = true; guncellemeBandi(j); }
+    if(j && j.surum && j.surum !== SURUM){
+      bulunanSurum = j;
+      if(SUNUCUDA) yenilemeyiDene();
+      else guncellemeBandi(j, null);   // file:// ile açılmış eski kopya
+    }
   }catch(e){ /* sessiz */ }
 }
-function guncellemeBandi(j){
+function guncellemeBandi(j, engel){
+  if($('#guncBandi')) return;
   const d = document.createElement('div');
-  d.className = 'guncelleme-bandi';
-  const adres = j.adres || 'https://ucelhabib.github.io/ucel-servis/';
-  d.innerHTML = `<b>Yeni sürüm v${esc(j.surum)} yayınlandı</b>
-    <span class="mini">${esc(j.not || '')}</span>
-    <div class="bosluk"></div>` + (SUNUCUDA
-      ? `<button class="btn vurgu kucuk" id="guncelleBtn">Şimdi güncelle</button>`
-      : `<span class="mini">Bu bilgisayardaki eski dosyayı açtın —
-           güncel sürüm için adresi kullan:</span>
-         <a class="btn vurgu kucuk" href="${esc(adres)}" target="_blank" rel="noopener">Adresi aç</a>`)
-    + `<button class="kapat" onclick="this.parentNode.remove()">&times;</button>`;
+  d.className = 'guncelleme-bandi'; d.id = 'guncBandi';
+  const adres = (j && j.adres) || 'https://ucelhabib.github.io/ucel-servis/';
+  d.innerHTML = SUNUCUDA
+    ? `<b>Yeni sürüm v${esc(j.surum)} hazır</b>
+       <span class="mini">${esc(engel||'')} bitince kendiliğinden yenilenecek</span>
+       <div class="bosluk"></div>
+       <button class="btn vurgu kucuk" onclick="hemenYenile()">Şimdi yenile</button>`
+    : `<b>Yeni sürüm v${esc(j.surum)} yayınlandı</b>
+       <span class="mini">Bu bilgisayardaki eski dosyayı açtın — güncel sürüm için adresi kullan:</span>
+       <div class="bosluk"></div>
+       <a class="btn vurgu kucuk" href="${esc(adres)}" target="_blank" rel="noopener">Adresi aç</a>`;
   document.body.appendChild(d);
-  const b = $('#guncelleBtn');
-  if(b) b.onclick = () => location.reload(true);
 }
-setInterval(surumKontrol, 15*60*1000);
-window.addEventListener('focus', () => { guncellemeBildirildi || surumKontrol(); });
-setTimeout(surumKontrol, 8000);
+/* yenilemeden sonra kullanıcı aynı sekmede kalsın */
+try{
+  const s = sessionStorage.getItem('ucel-sekme');
+  if(s){ sessionStorage.removeItem('ucel-sekme'); setTimeout(() => sekmeAc(s), 300); }
+}catch(e){}
+
+setInterval(surumKontrol, 45*1000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) surumKontrol(); });
+window.addEventListener('focus', surumKontrol);
+setTimeout(surumKontrol, 3000);
 
 /* ================= MASAÜSTÜNE KURULUM ================= */
 /* PWA manifesti ve ikonlar ayrı dosyalarda (manifest.json, icon-*.png).

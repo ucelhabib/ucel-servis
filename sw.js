@@ -1,7 +1,7 @@
 /* ÜÇEL Personel Servisi — service worker
    Amaç: uygulamanın masaüstüne/telefona kurulabilmesi ve internet yokken
    en azından açılabilmesi. Veri istekleri ASLA önbelleğe alınmaz. */
-const SURUM = 'ucel-servis-v2.8';
+const SURUM = 'ucel-servis-v2.9';
 const VARLIKLAR = ['./', './index.html', './rota.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -32,8 +32,10 @@ self.addEventListener('fetch', e => {
 
   // Sayfanın kendisi: önce ağ (yeni sürüm hemen gelsin), olmazsa önbellek.
   if (istek.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/')) {
+    // cache:'reload' → tarayıcının HTTP önbelleğini atla, her zaman sunucudan al.
+    // Yeni sürüm yayınlandığı an gelsin diye; GitHub Pages HTML'i 10 dk önbellekliyor.
     e.respondWith(
-      fetch(istek)
+      fetch(new Request(istek.url, {cache:'reload', credentials:'same-origin'}))
         .then(y => {
           const kopya = y.clone();
           caches.open(SURUM).then(c => c.put(istek, kopya)).catch(() => {});
