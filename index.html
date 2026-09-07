@@ -458,6 +458,7 @@ tbody tr:hover{background:#f7f9fc}
         <button class="btn kucuk yetki" id="okumaEkleBtn">+ Okuma gir</button>
       </div>
       <div class="izgara i4" id="kontrolKutular"></div>
+      <div id="kontrolDurum" style="margin-bottom:14px"></div>
       <div class="kart" style="padding:0;overflow:hidden">
         <div class="tablo-sar"><table id="kontrolTablo"></table></div>
       </div>
@@ -578,11 +579,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.0';
+const SURUM = '3.1';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Sağ üstte bildirim zili: sorunlar, yaklaşan bakım ve belgeler, eksik kalan işler '
-                 + 've yolunda gidenler tek yerde. Aynı koordinatta görünen farklı adresleri de yakalar. '
-                 + 'Otomatik güncelleme, "Neden bu plan?" tablosu, bakım-belge takibi ve şoför güzergah linki.';
+const SURUM_NOTU = 'Km okumalarının tarihi tabloda görünüyor (başlangıç ve bitiş ayrı ayrı). '
+                 + 'Ay tamamlanınca dönem kapandı uyarısı çıkıyor: kapanış km bilgilerini gir. '
+                 + 'Plan km hesabındaki iki katına sayma hatası düzeltildi.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -1392,10 +1393,13 @@ function sonOkuma(aracId){
   const kayitlar = D.kontrol.filter(k => k.arac_id === aracId &&
     (Number(k.bitis_km) > 0 || Number(k.baslangic_km) > 0));
   if(!kayitlar.length) return null;
-  const k = kayitlar.slice().sort((a,b) =>
-    String(b.okuma_tarihi||b.donem).localeCompare(String(a.okuma_tarihi||a.donem)))[0];
-  const km = Number(k.bitis_km) > 0 ? Number(k.bitis_km) : Number(k.baslangic_km);
-  return { km, tarih: (k.okuma_tarihi || k.donem || '').slice(0,10) };
+  // her kaydın en güncel okumasını al: kapanış varsa kapanış, yoksa başlangıç
+  const okumalar = kayitlar.map(k => Number(k.bitis_km) > 0
+    ? { km: Number(k.bitis_km), tarih: (k.bitis_tarihi || k.okuma_tarihi || k.donem || '').slice(0,10) }
+    : { km: Number(k.baslangic_km), tarih: (k.okuma_tarihi || k.donem || '').slice(0,10) })
+    .filter(o => o.km > 0 && o.tarih);
+  if(!okumalar.length) return null;
+  return okumalar.sort((a,b) => b.tarih.localeCompare(a.tarih))[0];
 }
 /* güncel km: son okuma + o günden bugüne tahmini servis km'si */
 function guncelKm(aracId){
@@ -2738,6 +2742,15 @@ $('#isimGoster').addEventListener('change', anaHaritaCiz);
 $('#yonFiltre').addEventListener('change', anaHaritaCiz);
 
 /* ================= AYLIK KONTROL ================= */
+/* dönem = ayın 1'i. Dönem, o ayın son gününden sonra kapanmış sayılır. */
+function donemBitisTarihi(d){
+  const t = new Date(d+'T00:00:00');
+  return new Date(t.getFullYear(), t.getMonth()+1, 0).toISOString().slice(0,10);
+}
+const donemBitis = d => trTarih(donemBitisTarihi(d));
+const donemKapandiMi = d => bugunTarih() > donemBitisTarihi(d);
+const donemAdi = d => new Date(d+'T00:00:00').toLocaleDateString('tr-TR',{month:'long',year:'numeric'});
+
 function donemler(){
   const s = new Set(D.kontrol.map(k => k.donem));
   const b = new Date(); s.add(new Date(b.getFullYear(), b.getMonth(), 1).toISOString().slice(0,10));
@@ -2760,7 +2773,7 @@ function kontrolTabloCiz(){
   const sat = D.araclar.map(v => ({v, k: D.kontrol.find(x => x.arac_id===v.id && x.donem===d)}));
   const topKm = sat.reduce((s,x)=> s + ((x.k?.bitis_km!=null && x.k?.baslangic_km!=null) ? x.k.bitis_km-x.k.baslangic_km : 0), 0);
   const topTutar = sat.reduce((s,x)=> s + Number(x.k?.yakit_tutar||0), 0);
-  const planKm = D.rotalar.reduce((s,r)=>s+Number(r.toplam_km||0),0)*2*(D.ayarlar.calisma_gunu_sayisi||22);
+  const planKm = D.rotalar.reduce((s,r)=>s+Number(r.toplam_km||0),0)*(D.ayarlar.calisma_gunu_sayisi||22);
   const planTutar = D.rotalar.reduce((s,r)=>s+Number(r.aylik_maliyet||0),0);
 
   $('#kontrolKutular').innerHTML = `
@@ -2772,6 +2785,16 @@ function kontrolTabloCiz(){
       <div class="dg">${(topKm&&planKm)?((topKm/planKm-1)*100).toFixed(0)+'%':'—'}</div>
       <div class="not">${topKm>planKm?'fazla':'plan içinde'}</div></div>
     <div class="kutu"><div class="et">Okuma girilen</div><div class="dg">${sat.filter(x=>x.k?.bitis_km!=null).length}<span class="bir">/ ${sat.length}</span></div></div>`;
+
+  const kapali = donemKapandiMi(d);
+  $('#kontrolDurum').innerHTML = kapali
+    ? (sat.every(x => x.k?.bitis_km != null)
+        ? `<div class="mesaj iyi">Bu dönem kapandı ve bütün kapanış km'leri girilmiş.</div>`
+        : `<div class="mesaj uyari"><b>${donemAdi(d)} dönemi kapandı</b> —
+           ${sat.filter(x => x.k?.bitis_km == null).length} aracın kapanış km'si girilmedi.
+           Girdiğinde gerçekleşen km, gerçek tüketim ve plandan sapma hesaplanır.</div>`)
+    : `<div class="mini">Bu dönem sürüyor — ${donemBitis(d)} tarihinde kapanacak.
+       Başlangıç km'lerini şimdi, kapanışları ay bitince gir.</div>`;
 
   $('#kontrolTablo').innerHTML = `<thead><tr>
       <th>Plaka</th><th>Yakıt</th><th class="sag">Başlangıç km</th><th class="sag">Bitiş km</th>
@@ -2785,8 +2808,12 @@ function kontrolTabloCiz(){
       return `<tr>
         <td><b>${esc(v.plaka)}</b></td>
         <td><span class="etiket e-${v.yakit}">${YAKIT_AD[v.yakit]}</span></td>
-        <td class="sag mono">${k?.baslangic_km!=null?sy(k.baslangic_km,0):'—'}</td>
-        <td class="sag mono">${k?.bitis_km!=null?sy(k.bitis_km,0):'—'}</td>
+        <td class="sag mono">${k?.baslangic_km!=null?sy(k.baslangic_km,0):'—'}
+          ${k?.okuma_tarihi?`<div class="mini" style="font-weight:400">${trTarih(k.okuma_tarihi)}</div>`
+            : (k?.baslangic_km!=null?'<div class="mini" style="font-weight:400;color:var(--err)">tarih yok</div>':'')}</td>
+        <td class="sag mono">${k?.bitis_km!=null?sy(k.bitis_km,0):'—'}
+          ${k?.bitis_tarihi?`<div class="mini" style="font-weight:400">${trTarih(k.bitis_tarihi)}</div>`
+            : (k?.bitis_km!=null?'<div class="mini" style="font-weight:400;color:var(--err)">tarih yok</div>':'')}</td>
         <td class="sag mono"><b>${km!=null?sy(km,0):'—'}</b></td>
         <td class="sag mono">${k?.yakit_miktar?sy(k.yakit_miktar,1)+' '+YAKIT_BIRIM[v.yakit]:'—'}</td>
         <td class="sag mono">${k?.yakit_tutar?tl(k.yakit_tutar):'—'}</td>
@@ -2805,11 +2832,20 @@ function okumaDuzenle(aracId){
   const onceki = oncekiler[0];
   modalAc(`${v.plaka} — ${new Date(d+'T00:00:00').toLocaleDateString('tr-TR',{month:'long',year:'numeric'})}`, `
     ${onceki?`<div class="mesaj uyari">Önceki dönem kapanış: <b>${sy(onceki.bitis_km ?? onceki.baslangic_km,0)} km</b></div>`:''}
-    <div class="alan"><label>Okuma tarihi</label><input id="kTarih" type="date" value="${k.okuma_tarihi||''}"></div>
     <div class="satir">
-      <div class="alan" style="flex:1"><label>Başlangıç km</label><input id="kBas" type="number" step="1" value="${k.baslangic_km??(onceki?.bitis_km??'')}"></div>
-      <div class="alan" style="flex:1"><label>Bitiş km</label><input id="kBit" type="number" step="1" value="${k.bitis_km??''}"></div>
+      <div class="alan" style="flex:1"><label>Başlangıç km</label>
+        <input id="kBas" type="number" step="1" value="${k.baslangic_km??(onceki?.bitis_km??'')}"></div>
+      <div class="alan" style="flex:1"><label>Başlangıç okuma tarihi</label>
+        <input id="kTarih" type="date" value="${k.okuma_tarihi||''}"></div>
     </div>
+    <div class="satir">
+      <div class="alan" style="flex:1"><label>Bitiş km</label>
+        <input id="kBit" type="number" step="1" value="${k.bitis_km??''}"></div>
+      <div class="alan" style="flex:1"><label>Bitiş okuma tarihi</label>
+        <input id="kBitTarih" type="date" value="${k.bitis_tarihi||''}"></div>
+    </div>
+    <p class="mini" style="margin:-4px 0 12px">Km'yi hangi gün okuduğun kaydediliyor; bakım uyarıları ve
+    tüketim hesabı bu tarihe göre çalışıyor. Tarihi boş bırakırsan bugünün tarihi yazılır.</p>
     <div class="satir">
       <div class="alan" style="flex:1"><label>Alınan yakıt (${YAKIT_BIRIM[v.yakit]})</label><input id="kMik" type="number" step="0.01" value="${k.yakit_miktar??''}"></div>
       <div class="alan" style="flex:1"><label>Tutar (₺)</label><input id="kTut" type="number" step="0.01" value="${k.yakit_tutar??''}"></div>
@@ -2818,7 +2854,9 @@ function okumaDuzenle(aracId){
     [{ad:'Vazgeç', sinif:'ikincil', is:()=>true},
      {ad:'Kaydet', is: async () => {
         const kayit = {
-          arac_id:aracId, donem:d, okuma_tarihi:$('#kTarih').value||null,
+          arac_id:aracId, donem:d,
+          okuma_tarihi: $('#kTarih').value || ($('#kBas').value!=='' ? bugunTarih() : null),
+          bitis_tarihi: $('#kBitTarih').value || ($('#kBit').value!=='' ? bugunTarih() : null),
           baslangic_km: parseFloat($('#kBas').value) || null,
           bitis_km: parseFloat($('#kBit').value) || null,
           yakit_miktar: parseFloat($('#kMik').value) || null,
@@ -3063,8 +3101,29 @@ function bildirimUret(){
       const gun = o && o.tarih ? gunFark(o.tarih, bg) : 999;
       if(gun > 45)
         ek('yakin', `<b>${esc(v.plaka)}</b> · km okuması ${gun} günlük`,
-           'Bakım uyarıları tahminle çalışıyor', () => sekmeAc('kontrol'));
+           `son okuma ${trTarih(o.tarih)} · bakım uyarıları tahminle çalışıyor`, () => sekmeAc('kontrol'));
     }
+  });
+
+  /* --- dönem kapanışı --- */
+  const donemListe = Array.from(new Set(D.kontrol.map(k => k.donem)))
+    .concat([new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10)]);
+  Array.from(new Set(donemListe)).sort().reverse().slice(0,3).forEach(dn => {
+    const kapali = donemKapandiMi(dn);
+    const eksikBitis = aktifArac.filter(v =>
+      !(D.kontrol.find(k => k.arac_id===v.id && k.donem===dn)||{}).bitis_km);
+    const eksikBas = aktifArac.filter(v =>
+      !(D.kontrol.find(k => k.arac_id===v.id && k.donem===dn)||{}).baslangic_km);
+    if(kapali && eksikBitis.length)
+      ek('sorun', `<b>${donemAdi(dn)}</b> dönemi kapandı — ${eksikBitis.length} aracın kapanış km'si girilmedi`,
+         `${eksikBitis.map(v=>v.plaka).join(', ')} · girilince gerçek tüketim ve plandan sapma çıkar`,
+         () => sekmeAc('kontrol'));
+    if(!kapali && eksikBas.length)
+      ek('eksik', `<b>${donemAdi(dn)}</b> · ${eksikBas.length} aracın başlangıç km'si girilmedi`,
+         `Dönem ${donemBitis(dn)} tarihinde kapanıyor`, () => sekmeAc('kontrol'));
+    if(kapali && !eksikBitis.length && dn === Array.from(new Set(donemListe)).sort().reverse()[1])
+      ek('iyi', `<b>${donemAdi(dn)}</b> dönemi tamamlandı`,
+         'Bütün kapanış km\'leri girilmiş', () => sekmeAc('kontrol'));
   });
   D.personel.filter(p => p.aktif && p.gorev === 'sofor').forEach(p => {
     kisiBelgeleri(p.id).forEach(x => {
