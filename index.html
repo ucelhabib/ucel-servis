@@ -510,12 +510,14 @@ tbody tr:hover{background:#f7f9fc}
             </label>
             <div class="satir">
               <div class="alan" style="flex:1"><label>Şehir</label><input id="aFiyatSehir" placeholder="Konya"></div>
-              <div class="alan" style="flex:1"><label>Hangi fiyat</label><select id="aFiyatBaz">
+              <select id="aFiyatBaz" class="hide">
                 <option value="ortalama">Şehir ortalaması</option>
                 <option value="en_ucuz">En ucuz istasyon</option>
                 <option value="en_pahali">En pahalı istasyon</option>
-              </select></div>
+              </select>
             </div>
+            <p class="mini" style="margin:-4px 0 10px">Benzin, motorin ve LPG için ilin güncel ortalama
+            pompa fiyatı alınır. <b>Elektrik hiçbir zaman değiştirilmez</b> — fabrikanın kendi tarifesi.</p>
             <button class="btn ikincil kucuk" id="fiyatCekBtn" type="button">Fiyatları şimdi güncelle</button>
             <div id="fiyatDurum" style="margin-top:10px"></div>
             <div class="mini" id="fiyatGuncelleme" style="margin-top:6px"></div>
@@ -579,11 +581,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.1';
+const SURUM = '3.2';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Km okumalarının tarihi tabloda görünüyor (başlangıç ve bitiş ayrı ayrı). '
-                 + 'Ay tamamlanınca dönem kapandı uyarısı çıkıyor: kapanış km bilgilerini gir. '
-                 + 'Plan km hesabındaki iki katına sayma hatası düzeltildi.';
+const SURUM_NOTU = 'Yakıt fiyatı otomatiği yeni kaynağa taşındı — eski servis ücretsiz erişimi kapatmıştı. '
+                 + 'Benzin, motorin ve LPG artık il bazında güncelleniyor. '
+                 + 'Km okuma tarihleri ve dönem kapanış uyarısı da bu sürümde.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
