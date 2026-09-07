@@ -106,8 +106,8 @@ function ciz(v){
   $('#uFirma').textContent = v.firma || 'Personel Servisi';
   $('#uPlaka').textContent = v.plaka || '—';
   $('#uAlt').textContent = [v.marka, v.sofor].filter(Boolean).join(' · ');
-  $('#uYon').textContent = gidis ? 'SABAH — GİDİŞ' : 'AKŞAM — DÖNÜŞ';
-  document.title = `${v.plaka} · ${gidis?'Gidiş':'Dönüş'}`;
+  $('#uYon').textContent = gidis ? 'İŞE GİDİŞ' : 'EVE DÖNÜŞ';
+  document.title = `${v.plaka} · ${gidis?'İşe gidiş':'Eve dönüş'}`;
 
   const dur = (v.duraklar || []).slice().sort((a,b) => a.sira - b.sira);
   const fab = v.fabrika || {};
@@ -200,7 +200,7 @@ function harita(noktalar, geometri, gidis){
     if(error) throw new Error(error.message);
     if(!data){ hata('Bu bağlantı geçerli değil ya da iptal edilmiş. Yöneticinden yeni link iste.','uyari'); return; }
     if(data.durum === 'rota_yok'){
-      hata(`<b>${esc(data.plaka||'')}</b> için ${data.yon==='gidis'?'gidiş':'dönüş'} güzergahı henüz hesaplanmamış.`,'uyari');
+      hata(`<b>${esc(data.plaka||'')}</b> için ${data.yon==='gidis'?'işe gidiş':'eve dönüş'} güzergahı henüz hesaplanmamış.`,'uyari');
       return;
     }
     ciz(data);

@@ -249,9 +249,17 @@ tbody tr:hover{background:#f7f9fc}
 
 /* rota kartı */
 .rota-kart{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff;box-shadow:var(--sh);margin-bottom:14px}
+/* gidiş ve dönüş yan yana */
+.rotaCift{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.rotaCift .rota-kart{margin-bottom:16px}
+.rota-bos{opacity:.65}
+@media(max-width:1100px){ .rotaCift{grid-template-columns:1fr;gap:0} }
 .rota-bas{padding:13px 16px;color:#fff;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .rota-bas .pl{font-weight:800;letter-spacing:.4px}
 .rota-bas .sf{font-size:13px;opacity:.85}
+/* düğmeler kendi satırında dursun — iki sütunlu düzende başlık kırılmasın */
+.rota-dugmeler{flex-basis:100%;display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+.rota-dugmeler .btn{padding:4px 10px;font-size:12px}
 .rota-ozet{display:flex;gap:20px;padding:11px 16px;background:#f7f9fc;border-bottom:1px solid var(--line);flex-wrap:wrap;font-size:13px}
 .rota-ozet b{display:block;font-size:16px;letter-spacing:-.3px}
 .duraklar{list-style:none;margin:0;padding:8px 0}
@@ -305,6 +313,9 @@ tbody tr:hover{background:#f7f9fc}
   .yazdir-basligi{display:flex !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .rota-bas,.rota-ozet,th,.dur-no{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .rota-kart{break-inside:avoid;box-shadow:none;margin-bottom:18px}
+  /* yol kağıdında tek sütun: şoför tek sayfada okusun */
+  .rotaCift{display:block}
+  .rota-bos{display:none}
   .sekme{display:none} .sekme.aktif{display:block}
 }
 </style>
@@ -437,8 +448,8 @@ tbody tr:hover{background:#f7f9fc}
     <section class="sekme" data-s="harita">
       <div class="baslik"><h2>Harita</h2><div class="bosluk"></div>
         <select id="yonFiltre" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px">
-          <option value="gidis">Sabah — gidiş</option>
-          <option value="donus">Akşam — dönüş</option>
+          <option value="gidis">İşe gidiş</option>
+          <option value="donus">Eve dönüş</option>
         </select>
         <label class="mini satir" style="gap:6px" title="İsimler yakınlaşınca görünür"><input type="checkbox" id="isimGoster" checked> İsimler</label>
         <label class="mini satir" style="gap:6px"><input type="checkbox" id="rotaGoster" checked> Güzergahlar</label>
@@ -581,11 +592,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.2';
+const SURUM = '3.3';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Yakıt fiyatı otomatiği yeni kaynağa taşındı — eski servis ücretsiz erişimi kapatmıştı. '
-                 + 'Benzin, motorin ve LPG artık il bazında güncelleniyor. '
-                 + 'Km okuma tarihleri ve dönem kapanış uyarısı da bu sürümde.';
+const SURUM_NOTU = 'Güzergah ekranı yeniden düzenlendi: her aracın gidiş ve dönüşü yan yana, '
+                 + 'aynı şoförün sabahı ve akşamı tek bakışta. Dar ekranda alt alta iner, '
+                 + 'yol kağıdında tek sütun basılır.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -2089,7 +2100,7 @@ function izinModal(){
       ${acik.map(d=>{const p=kisi(d.personel_id);return `<div class="satir" style="padding:5px 0;font-size:13px">
         <b>${esc(p?p.ad_soyad:'—')}</b>
         <span class="mini">${d.baslangic===d.bitis?d.baslangic:d.baslangic+' – '+d.bitis}
-        · ${d.yon==='ikisi'?'tam gün':d.yon==='gidis'?'gidiş':'dönüş'}${d.sebep?' · '+esc(d.sebep):''}</span>
+        · ${d.yon==='ikisi'?'tam gün':d.yon==='gidis'?'işe gidiş':'eve dönüş'}${d.sebep?' · '+esc(d.sebep):''}</span>
         <div class="bosluk"></div>
         <button class="btn tehlike kucuk" onclick="izinSil('${d.id}')">Sil</button></div>`;}).join('')}
     </div>`:''}`,
@@ -2347,7 +2358,7 @@ async function rotalariKaydet(sonuc, tarih, gun, z){
       const varis  = y.capa === 'varis' ? y.saat : saatEkle(y.saat, sure);
 
       const { data:rota, error } = await sb.from('rotalar').insert({
-        ad: `${d.v.plaka} · ${y.ad === 'gidis' ? 'Gidiş' : 'Dönüş'}`,
+        ad: `${d.v.plaka} · ${y.ad === 'gidis' ? 'İşe gidiş' : 'Eve dönüş'}`,
         arac_id:d.v.id, sofor_id:d.v.sofor_id, yon:y.ad, plan_tarihi:tarih,
         toplam_km: +d.o.km.toFixed(2), toplam_sure_dk: Math.round(sure),
         pay_dk: y.hava.dk, hava_notu: y.hava.not,
@@ -2418,16 +2429,30 @@ function cizRotalar(){
   let ri = 0;
   D.araclar.forEach(v => { if(kullanilan.has(v.id)) renkAnahtari[v.id] = RENKLER[ri++ % RENKLER.length]; });
 
-  const yonSirasi = ['gidis','donus'];
-  kap.innerHTML = yonSirasi.map(yon => {
-    const grup = D.rotalar.filter(r => (r.yon||'gidis') === yon);
-    if(!grup.length) return '';
-    return `<h3 class="yon-baslik">${yon==='gidis'?'Sabah — Gidiş':'Akşam — Dönüş'}
-      <span class="mini">${yon==='gidis'
-        ? 'araç şoförün evinden kalkar, fabrikada biter'
-        : 'araç fabrikadan kalkar, şoförün evinde kalır'}</span></h3>` +
-      grup.map(r => rotaKartHtml(r, renkAnahtari[r.arac_id] || RENKLER[0])).join('');
-  }).join('');
+  /* Her araç için gidiş ve dönüş yan yana: aynı şoförün sabahı ve akşamı
+     tek bakışta görülsün, kartların sağındaki boşluk da değerlensin. */
+  const araclarSirali = [];
+  D.rotalar.forEach(r => { if(!araclarSirali.includes(r.arac_id)) araclarSirali.push(r.arac_id); });
+
+  kap.innerHTML = `<div class="mini" style="margin:18px 0 10px">
+      Solda <b>işe gidiş</b> (araç şoförün evinden kalkar, fabrikada biter) ·
+      sağda <b>eve dönüş</b> (fabrikadan kalkar, şoförün evinde kalır).
+    </div>` +
+    araclarSirali.map(aid => {
+      const renk = renkAnahtari[aid] || RENKLER[0];
+      const gid = D.rotalar.find(r => r.arac_id===aid && (r.yon||'gidis')==='gidis');
+      const don = D.rotalar.find(r => r.arac_id===aid && r.yon==='donus');
+      const bos = yon => `<div class="rota-kart rota-bos">
+        <div class="rota-bas" style="background:${renk};color:${metinRengi(renk)}">
+          <span class="pl">${esc((arac(aid)||{}).plaka||'—')}</span>
+          <span class="etiket ${yon==='donus'?'e-donus':'e-gidis'}">${yon==='donus'?'EVE DÖNÜŞ':'İŞE GİDİŞ'}</span>
+        </div>
+        <div class="ip">Bu yönde güzergah yok.</div></div>`;
+      return `<div class="rotaCift">
+        ${gid ? rotaKartHtml(gid, renk) : bos('gidis')}
+        ${don ? rotaKartHtml(don, renk) : bos('donus')}
+      </div>`;
+    }).join('');
 }
 function rotaDuraklari(r){
   return D.duraklar.filter(d => d.rota_id===r.id).sort((x,y)=>x.sira-y.sira);
@@ -2451,7 +2476,7 @@ function soforLinkiAc(aracId, yon){
     return;
   }
   const adres = soforLinkAdresi(b.kod);
-  modalAc(`${v?v.plaka:''} — şoför sayfası (${yon==='gidis'?'gidiş':'dönüş'})`, `
+  modalAc(`${v?v.plaka:''} — şoför sayfası (${yon==='gidis'?'işe gidiş':'eve dönüş'})`, `
     <p class="mini" style="margin-top:0">Bu linki şoföre WhatsApp'tan gönder. <b>Giriş gerektirmez</b>,
     telefonda açılır: durak sırası, biniş saatleri, harita ve her durak için yol tarifi.
     Güzergahı yeniden hesapladığında link aynı kalır, sayfa kendiliğinden güncellenir.</p>
@@ -2484,13 +2509,18 @@ function rotaKartHtml(r, renk){
   return `<div class="rota-kart">
     <div class="rota-bas" style="background:${renk};color:${metinRengi(renk)}">
       <span class="pl">${esc(v?v.plaka:'—')}</span>
-      <span class="etiket ${r.yon==='donus'?'e-donus':'e-gidis'}">${r.yon==='donus'?'DÖNÜŞ':'GİDİŞ'}</span>
+      <span class="etiket ${r.yon==='donus'?'e-donus':'e-gidis'}">${r.yon==='donus'?'EVE DÖNÜŞ':'İŞE GİDİŞ'}</span>
       <span class="sf">${esc(v?(v.marka+' '+v.model):'')} · şoför ${esc(s?s.ad_soyad:'—')}</span>
-      <div class="bosluk"></div>
-      <a class="btn kucuk ikincil yazdirma-gizle" href="${kml}" target="_blank" rel="noopener">Haritada aç</a>
-      <button class="btn kucuk ikincil yazdirma-gizle" onclick="linkKopyala('${kml}', this)">Linki kopyala</button>
-      <button class="btn kucuk ikincil yazdirma-gizle" onclick="mesajKopyala('${r.id}', this)">Mesaj metni</button>
-      <button class="btn kucuk yazdirma-gizle" onclick="soforLinkiAc('${r.arac_id}','${r.yon||'gidis'}')">Şoför sayfası</button>
+      <div class="rota-dugmeler yazdirma-gizle">
+        <a class="btn kucuk ikincil" href="${kml}" target="_blank" rel="noopener"
+           title="Google Haritalar'da aç">Harita</a>
+        <button class="btn kucuk ikincil" onclick="linkKopyala('${kml}', this)"
+           title="Harita bağlantısını kopyala">Link</button>
+        <button class="btn kucuk ikincil" onclick="mesajKopyala('${r.id}', this)"
+           title="Paylaşılacak mesaj metnini kopyala">Mesaj</button>
+        <button class="btn kucuk" onclick="soforLinkiAc('${r.arac_id}','${r.yon||'gidis'}')"
+           title="Şoförün girişsiz açacağı sayfa">Şoför sayfası</button>
+      </div>
     </div>
     <div class="rota-ozet">
       <div><span class="mini">Mesafe</span><b>${sy(r.toplam_km,1)} km</b></div>
@@ -2709,7 +2739,7 @@ function etiketGorunurluk(){
 function lejantCiz(liste, yon){
   const el = $('#haritaLejant');
   if(!liste.length){ el.innerHTML = '<div class="baslikcik">Güzergah hesaplanmadı</div>'; return; }
-  el.innerHTML = `<div class="baslikcik">${yon==='donus'?'Akşam — dönüş':'Sabah — gidiş'}</div>`
+  el.innerHTML = `<div class="baslikcik">${yon==='donus'?'Eve dönüş':'İşe gidiş'}</div>`
     + liste.map(x => `<div class="lejant-satir ${gizliAraclar.has(x.id)?'kapali':''}"
          onclick="aracGizleAc('${x.id}')" title="Göster / gizle">
         <span class="cizgi" style="background:${x.renk}"></span>
