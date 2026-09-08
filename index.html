@@ -596,11 +596,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.4';
+const SURUM = '3.5';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Bildirimlerde "tümünü okundu say"; eksik kayıtlar araç ve kişi başına tek satırda '
-                 + 'toplandı. Yakıt fiyatı önceki ölçüme göre artış/düşüş yüzdesiyle gösteriliyor, '
-                 + '%2 üstü değişimde uyarı çıkıyor.';
+const SURUM_NOTU = 'Fiyat kaynağının kendi güncelleme tarihi de kaydediliyor: çekiliş tarihi ile '
+                 + 'fiyatın tarihi ayrı görünüyor, kaynak 3 günden fazla güncellemezse uyarı çıkıyor. '
+                 + 'Bildirimlerde tümünü okundu say ve fiyat değişim yüzdesi de bu sürümde.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -2909,6 +2909,14 @@ function okumaDuzenle(aracId){
 $('#okumaEkleBtn').addEventListener('click', () => D.araclar[0] && okumaDuzenle(D.araclar[0].id));
 
 /* ================= AYARLAR ================= */
+/* Kaynağın kendi beyan ettiği fiyat tarihi kaç gün eski?
+   Bizim çekme tarihimizle karıştırılmasın: her gün çekiyoruz ama kaynak
+   her gün güncellemiyor. */
+function kaynakYasi(){
+  const t = D.ayarlar && D.ayarlar.fiyat_kaynak_tarih;
+  return t ? gunFark(String(t).slice(0,10), bugunTarih()) : null;
+}
+
 /* Bir yakıtın son fiyatı ile bir önceki kayıtlı günü karşılaştırır.
    Kaydedilen fiyat geçmişi yakit_fiyatlari tablosunda tutuluyor. */
 function fiyatDegisim(yakit){
@@ -2977,9 +2985,17 @@ function cizAyarlar(){
   $('#aDakika').value = a.dakika_degeri ?? 1;
   $('#aDizel').value = a.fiyat_dizel; $('#aBenzin').value = a.fiyat_benzin;
   $('#aOtogaz').value = a.fiyat_otogaz; $('#aElektrik').value = a.fiyat_elektrik;
+  const kayGun = kaynakYasi();
   $('#fiyatGuncelleme').innerHTML = (a.fiyat_guncelleme
-    ? 'Son güncelleme: ' + new Date(a.fiyat_guncelleme).toLocaleString('tr-TR') : '')
-    + (a.fiyat_kaynak ? ` · kaynak ${esc(a.fiyat_kaynak)}` : ' · elle girildi');
+    ? 'Son çekiliş: ' + new Date(a.fiyat_guncelleme).toLocaleString('tr-TR') : '')
+    + (a.fiyat_kaynak ? ` · kaynak ${esc(a.fiyat_kaynak)}` : ' · elle girildi')
+    + (a.fiyat_kaynak_tarih
+        ? `<br><b>Kaynağın fiyatı ${trTarih(a.fiyat_kaynak_tarih)} tarihli</b>`
+          + (kayGun > 0 ? ` — ${kayGun} gün önce` : ' — bugün')
+          + `. <span style="color:${kayGun>=3?'#9b2620':'var(--ink-3)'}">${
+             kayGun >= 3 ? 'Kaynak birkaç gündür güncellemiyor; sert bir fiyat hareketi olduysa gecikmeli yansır.'
+                         : 'Bu kaynak her gün güncellemiyor — çekiliş tarihi ile fiyatın tarihi farklı olabilir.'}</span>`
+        : '');
   $('#aFiyatOto').checked = a.fiyat_otomatik !== false;
   $('#aFiyatSehir').value = a.fiyat_sehir || 'Konya';
   $('#aFiyatBaz').value = a.fiyat_baz || 'ortalama';
@@ -3124,9 +3140,14 @@ function bildirimUret(){
          `${esc(a.fiyat_kaynak||'')} · dizel ${sy(a.fiyat_dizel,2)} · benzin ${sy(a.fiyat_benzin,2)} · LPG ${sy(a.fiyat_otogaz,2)}`,
          () => sekmeAc('ayarlar'));
     else if(gun > 4)
-      ek('yakin', `Yakıt fiyatları <b>${gun} gündür</b> güncellenmedi`,
+      ek('yakin', `Yakıt fiyatları <b>${gun} gündür</b> çekilmedi`,
          'Ayarlar → Fiyatları şimdi güncelle', () => sekmeAc('ayarlar'));
   }
+  const kYas = kaynakYasi();
+  if(kYas != null && kYas >= 3)
+    ek('yakin', `Fiyat kaynağı <b>${kYas} gündür</b> güncellenmemiş`,
+       `Kaynaktaki fiyat ${trTarih(D.ayarlar.fiyat_kaynak_tarih)} tarihli — sert bir fiyat hareketi olduysa gecikmeli yansır`,
+       () => sekmeAc('ayarlar'));
 
   /* --- güzergah --- */
   if(!D.rotalar.length){
