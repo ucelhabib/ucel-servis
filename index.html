@@ -118,6 +118,10 @@ header .logo-alt{color:rgba(255,255,255,.65);font-size:11px;margin:0}
 .bSatir .bMetin b{font-weight:700}
 .bSatir .bAlt{font-size:11.5px;color:var(--ink-3);margin-top:1px}
 .bBos{padding:26px 16px;text-align:center;color:var(--ink-3);font-size:13px}
+.bArac{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px;border-bottom:1px solid var(--line)}
+.bArac .btn{padding:4px 10px;font-size:12px}
+.bSatir.okundu{opacity:.5}
+.bSatir.okundu .bMetin{font-weight:400}
 
 nav{
   background:#fff;border-bottom:1px solid var(--line);display:flex;gap:2px;padding:0 8px;
@@ -592,11 +596,11 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.3';
+const SURUM = '3.4';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Güzergah ekranı yeniden düzenlendi: her aracın gidiş ve dönüşü yan yana, '
-                 + 'aynı şoförün sabahı ve akşamı tek bakışta. Dar ekranda alt alta iner, '
-                 + 'yol kağıdında tek sütun basılır.';
+const SURUM_NOTU = 'Bildirimlerde "tümünü okundu say"; eksik kayıtlar araç ve kişi başına tek satırda '
+                 + 'toplandı. Yakıt fiyatı önceki ölçüme göre artış/düşüş yüzdesiyle gösteriliyor, '
+                 + '%2 üstü değişimde uyarı çıkıyor.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -651,7 +655,7 @@ function metinRengi(hex){
 const D = {
   ayarlar:null, personel:[], araclar:[], rotalar:[], duraklar:[],
   kontrol:[], devamsizlik:[], fiyatlar:[], bakimPlan:[], bakimKayit:[],
-  belgePlan:[], belgeKayit:[], baglantilar:[], planSecenek:[], sonOpt:null
+  belgePlan:[], belgeKayit:[], baglantilar:[], planSecenek:[], okunanBildirim:[], sonOpt:null
 };
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
@@ -913,7 +917,7 @@ function sekmeAc(k){
 
 /* ================= VERİ ================= */
 async function verileriYukle(){
-  const [ay, pe, ar, ro, du, ko, dv, fi, bp, bk, gp, gk, rb, ps] = await Promise.all([
+  const [ay, pe, ar, ro, du, ko, dv, fi, bp, bk, gp, gk, rb, ps, ob] = await Promise.all([
     sb.from('ayarlar').select('*').eq('id',1).single(),
     sb.from('personel').select('*').order('ad_soyad'),
     sb.from('araclar').select('*').order('plaka'),
@@ -928,6 +932,7 @@ async function verileriYukle(){
     sb.from('belge_kayit').select('*').order('tarih',{ascending:false}),
     sb.from('rota_baglanti').select('*'),
     sb.from('plan_secenek').select('*').order('cep_ay'),
+    sb.from('bildirim_okundu').select('anahtar'),
   ]);
   D.ayarlar = ay.data || {};
   D.personel = pe.data || []; D.araclar = ar.data || [];
@@ -937,6 +942,7 @@ async function verileriYukle(){
   D.bakimPlan = bp.data || []; D.bakimKayit = bk.data || [];
   D.belgePlan = gp.data || []; D.belgeKayit = gk.data || [];
   D.baglantilar = rb.data || []; D.planSecenek = ps.data || [];
+  D.okunanBildirim = ob.data || [];
   const ilkHata = [ay,pe,ar,ro,du,ko,dv].find(x => x.error);
   if(ilkHata && !D.ayarlar.id) throw new Error(ilkHata.error.message);
   cizPanel(); cizPersonel(); cizAraclar(); cizRotalar(); cizKontrol(); cizAyarlar(); cizGunlukDurum();
@@ -2903,6 +2909,33 @@ function okumaDuzenle(aracId){
 $('#okumaEkleBtn').addEventListener('click', () => D.araclar[0] && okumaDuzenle(D.araclar[0].id));
 
 /* ================= AYARLAR ================= */
+/* Bir yakıtın son fiyatı ile bir önceki kayıtlı günü karşılaştırır.
+   Kaydedilen fiyat geçmişi yakit_fiyatlari tablosunda tutuluyor. */
+function fiyatDegisim(yakit){
+  const kayitlar = (D.fiyatlar||[])
+    .filter(f => f.yakit === yakit && Number(f.fiyat) > 0)
+    .sort((a,b) => String(b.tarih).localeCompare(String(a.tarih)));
+  if(kayitlar.length < 2) return null;
+  const son = kayitlar[0];
+  const onceki = kayitlar.find(f => f.tarih !== son.tarih);
+  if(!onceki) return null;
+  const a = Number(son.fiyat), b = Number(onceki.fiyat);
+  const fark = a - b;
+  return { son:a, onceki:b, fark, yuzde: b ? fark/b*100 : 0,
+           sonTarih:son.tarih, oncekiTarih:onceki.tarih,
+           gun: gunFark(onceki.tarih, son.tarih) };
+}
+function fiyatDegisimMetni(yakit, uzun){
+  const d = fiyatDegisim(yakit);
+  if(!d) return '';
+  if(Math.abs(d.yuzde) < 0.05)
+    return uzun ? ` <span class="mini">(${trTarih(d.oncekiTarih)}'a göre değişmedi)</span>` : '';
+  const yon = d.fark > 0 ? '▲' : '▼';
+  const renk = d.fark > 0 ? '#9b2620' : '#0b6b3c';
+  return ` <span style="color:${renk};font-weight:700;font-size:12px">${yon} %${sy(Math.abs(d.yuzde),1)}</span>`
+    + (uzun ? ` <span class="mini">(${trTarih(d.oncekiTarih)}: ${sy(d.onceki,2)} ₺ · ${d.fark>0?'+':''}${sy(d.fark,2)} ₺)</span>` : '');
+}
+
 /* ---- güncel pompa fiyatlarını çek (Supabase Edge Function üzerinden) ---- */
 async function fiyatCek(sessiz){
   const btn = $('#fiyatCekBtn');
@@ -2913,10 +2946,11 @@ async function fiyatCek(sessiz){
     const j = await r.json();
     if(!j.ok) throw new Error(j.hata || 'Fiyat alınamadı');
     await verileriYukle();
+    // fonksiyon her yakıt için düz sayı döndürüyor
     const satir = Object.entries(j.fiyatlar)
-      .map(([k,v]) => `<b>${YAKIT_AD[k]}</b> ${sy(v.fiyat,2)} ₺`).join(' · ');
+      .map(([k,v]) => `<b>${YAKIT_AD[k]}</b> ${sy(Number(v),2)} ₺${fiyatDegisimMetni(k)}`).join(' · ');
     if(!sessiz) mesaj('#fiyatDurum','iyi',
-      `${esc(j.sehir)} güncel (${j.baz==='en_ucuz'?'en ucuz':j.baz==='en_pahali'?'en pahalı':'ortalama'}): ${satir}`
+      `${esc(j.sehir)} güncel: ${satir}`
       + (j.uygulandi ? ' — ayarlara uygulandı.' : ' — otomatik uygulama kapalı, elle girebilirsin.')
       + ' Güzergahı yeniden hesaplaman önerilir.');
   }catch(e){
@@ -2949,10 +2983,20 @@ function cizAyarlar(){
   $('#aFiyatOto').checked = a.fiyat_otomatik !== false;
   $('#aFiyatSehir').value = a.fiyat_sehir || 'Konya';
   $('#aFiyatBaz').value = a.fiyat_baz || 'ortalama';
-  const bugunF = D.fiyatlar.filter(f => f.tarih === new Date().toISOString().slice(0,10) && f.min_fiyat != null);
-  $('#fiyatDurum').innerHTML = bugunF.length
-    ? `<div class="mesaj iyi" style="margin:0">Bugünkü ${esc(bugunF[0].sehir||'Konya')} aralığı — `
-      + bugunF.map(f => `<b>${YAKIT_AD[f.yakit]}</b> ${sy(f.min_fiyat,2)}–${sy(f.max_fiyat,2)} ₺`).join(' · ') + '</div>'
+  // önceki kayıtlı güne göre değişim
+  const degisenler = ['dizel','benzin','otogaz'].map(y => ({y, d:fiyatDegisim(y)})).filter(x => x.d);
+  $('#fiyatDurum').innerHTML = degisenler.length
+    ? `<div class="mesaj ${degisenler.some(x=>Math.abs(x.d.yuzde)>=2)?'uyari':'iyi'}" style="margin:0">
+        <b>Önceki ölçüme göre</b><br>`
+      + degisenler.map(({y,d}) => {
+          const yon = Math.abs(d.yuzde) < 0.05 ? 'değişmedi'
+            : `${d.fark>0?'▲ arttı':'▼ düştü'} %${sy(Math.abs(d.yuzde),1)} (${d.fark>0?'+':''}${sy(d.fark,2)} ₺)`;
+          return `<b>${YAKIT_AD[y]}</b> ${sy(d.son,2)} ₺ — ${yon}
+            <span class="mini">${trTarih(d.oncekiTarih)}: ${sy(d.onceki,2)} ₺</span>`;
+        }).join('<br>')
+      + (degisenler.some(x=>Math.abs(x.d.yuzde)>=2)
+          ? '<br><span class="mini">Değişim %2\'yi geçti — güzergahı yeniden hesaplaman önerilir.</span>' : '')
+      + '</div>'
     : '';
   $('#aZirve').value = a.zirve_pay_yuzde ?? 20;
   $('#aHava').checked = a.hava_otomatik !== false;
@@ -3114,17 +3158,21 @@ function bildirimUret(){
     }
   }
 
-  /* --- bakım ve belgeler --- */
+  /* --- bakım ve belgeler ---
+     Kaydı hiç girilmemiş kalemler araç başına tek satırda toplanıyor;
+     yoksa 4 araç × 6 kalem = 24 satırlık bir yığın oluşuyor. */
   aktifArac.forEach(v => {
+    const kayitsiz = [];
     aracBakimlari(v.id).forEach(x => {
       if(x.seviye === 'gecti')
         ek('sorun', `<b>${esc(v.plaka)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => bakimAc(v.id));
       else if(x.seviye === 'yakin')
         ek('yakin', `<b>${esc(v.plaka)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => bakimAc(v.id));
-      else if(x.seviye === 'bilinmiyor')
-        ek('eksik', `<b>${esc(v.plaka)}</b> · ${esc(x.ad)} kaydı girilmemiş`,
-           'Son yapılan işlemi gir ki takip başlasın', () => bakimAc(v.id));
+      else if(x.seviye === 'bilinmiyor') kayitsiz.push(x.ad);
     });
+    if(kayitsiz.length)
+      ek('eksik', `<b>${esc(v.plaka)}</b> · ${kayitsiz.length} kalemde ilk kayıt yok`,
+         kayitsiz.join(', ') + ' — son yapılan işlemi gir ki takip başlasın', () => bakimAc(v.id));
     if(!guncelKm(v.id))
       ek('eksik', `<b>${esc(v.plaka)}</b> · kilometre okuması yok`,
          'Aylık Kontrol\'den km gir', () => sekmeAc('kontrol'));
@@ -3158,14 +3206,26 @@ function bildirimUret(){
          'Bütün kapanış km\'leri girilmiş', () => sekmeAc('kontrol'));
   });
   D.personel.filter(p => p.aktif && p.gorev === 'sofor').forEach(p => {
+    const kayitsiz = [];
     kisiBelgeleri(p.id).forEach(x => {
       if(x.seviye === 'gecti')
         ek('sorun', `<b>${esc(p.ad_soyad)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => belgeAc(p.id));
       else if(x.seviye === 'yakin')
         ek('yakin', `<b>${esc(p.ad_soyad)}</b> · ${esc(x.ad)}: ${esc(x.metin)}`, null, () => belgeAc(p.id));
-      else if(x.seviye === 'bilinmiyor')
-        ek('eksik', `<b>${esc(p.ad_soyad)}</b> · ${esc(x.ad)} girilmemiş`, null, () => belgeAc(p.id));
+      else if(x.seviye === 'bilinmiyor') kayitsiz.push(x.ad);
     });
+    if(kayitsiz.length)
+      ek('eksik', `<b>${esc(p.ad_soyad)}</b> · ${kayitsiz.length} belge girilmemiş`,
+         kayitsiz.join(', '), () => belgeAc(p.id));
+  });
+
+  /* --- yakıt fiyatı hareketi --- */
+  ['dizel','benzin','otogaz'].forEach(y => {
+    const d = fiyatDegisim(y);
+    if(!d || Math.abs(d.yuzde) < 2) return;
+    ek('yakin', `<b>${YAKIT_AD[y]}</b> fiyatı ${d.fark>0?'arttı':'düştü'}: %${sy(Math.abs(d.yuzde),1)}`,
+       `${trTarih(d.oncekiTarih)} ${sy(d.onceki,2)} ₺ → ${trTarih(d.sonTarih)} ${sy(d.son,2)} ₺ · güzergahı yeniden hesapla`,
+       () => sekmeAc('guzergah'));
   });
 
   /* --- iyi haberler --- */
@@ -3180,38 +3240,84 @@ function bildirimUret(){
   return b.sort((x,y) => sira[x.seviye] - sira[y.seviye]);
 }
 
-let bildirimler = [], bildirimIsleri = [];
+let bildirimler = [], bildirimIsleri = [], okunmusGoster = false;
+
+/* Bildirimin kimliği metninden türetiliyor: durum değişince (örn. eksik araç
+   sayısı düşünce) anahtar da değişir ve bildirim yeniden görünür.
+   Yani "okundu" kalıcı susturma değil, sadece bu haliyle görüldü demek. */
+const bildirimAnahtar = x =>
+  (x.seviye + '|' + String(x.metin).replace(/<[^>]+>/g,'') + '|' + String(x.alt||'').replace(/<[^>]+>/g,''))
+    .replace(/\s+/g,' ').trim().slice(0,400);
+
 function cizBildirimler(){
   const zil = $('#zilBtn'), sayiEl = $('#zilSayi'), panel = $('#bildirimPanel');
   if(!zil || !panel) return;
   try{ bildirimler = bildirimUret(); }catch(e){ bildirimler = []; }
-  const sorun = bildirimler.filter(x => x.seviye === 'sorun').length;
-  const yakin = bildirimler.filter(x => x.seviye === 'yakin').length;
+  const okunanlar = new Set((D.okunanBildirim||[]).map(x => x.anahtar));
+  bildirimler.forEach(x => { x.anahtar = bildirimAnahtar(x); x.okundu = okunanlar.has(x.anahtar); });
+
+  const yeni = bildirimler.filter(x => !x.okundu);
+  const sorun = yeni.filter(x => x.seviye === 'sorun').length;
+  const yakin = yeni.filter(x => x.seviye === 'yakin').length;
   const sayi = sorun + yakin;
   sayiEl.textContent = sayi;
   sayiEl.classList.toggle('hide', !sayi);
   sayiEl.classList.toggle('sakin', !sorun);
-  zil.title = sayi ? `${sorun} sorun, ${yakin} yaklaşan iş` : 'Her şey yolunda';
+  zil.title = sayi ? `${sorun} sorun, ${yakin} yaklaşan iş` : 'Okunmamış bildirim yok';
 
   bildirimIsleri = [];
+  const gosterilecek = okunmusGoster ? bildirimler : yeni;
   const grup = s => {
-    const liste = bildirimler.filter(x => x.seviye === s);
+    const liste = gosterilecek.filter(x => x.seviye === s);
     if(!liste.length) return '';
     return `<div class="bGrup">${BILDIRIM_BASLIK[s]} · ${liste.length}</div>` +
       liste.map(x => {
         const i = bildirimIsleri.push(x.git) - 1;
-        return `<div class="bSatir ${x.git?'':'duz'}" ${x.git?`onclick="bildirimGit(${i})"`:''}>
+        return `<div class="bSatir ${x.git?'':'duz'} ${x.okundu?'okundu':''}"
+          ${x.git?`onclick="bildirimGit(${i})"`:''}>
           <span class="bNok n-${s}"></span>
           <span class="bMetin">${x.metin}${x.alt?`<div class="bAlt">${x.alt}</div>`:''}</span>
         </div>`;
       }).join('');
   };
+  const okunmusSayi = bildirimler.length - yeni.length;
   panel.innerHTML = `<div class="bBas"><b>Bildirimler</b>
-      <span class="mini">${bildirimler.length} kayıt</span><div class="bosluk"></div>
-      <button class="btn ikincil kucuk" onclick="bildirimPaneliKapat()">Kapat</button></div>`
-    + (bildirimler.length
+      <span class="mini">${yeni.length} yeni${okunmusSayi?` · ${okunmusSayi} okunmuş`:''}</span>
+      <div class="bosluk"></div>
+      <button class="btn ikincil kucuk" onclick="bildirimPaneliKapat()">Kapat</button></div>
+    <div class="bArac">
+      ${yeni.length ? `<button class="btn ikincil kucuk" onclick="hepsiniOkunduSay()">Tümünü okundu say</button>` : ''}
+      ${okunmusSayi ? `<button class="btn ikincil kucuk" onclick="okunmuslariAcKapa()">
+        ${okunmusGoster?'Okunmuşları gizle':`Okunmuşları göster (${okunmusSayi})`}</button>` : ''}
+      ${okunmusSayi ? `<button class="btn ikincil kucuk" onclick="okunduSifirla()" title="Hepsini yeniden okunmamış yap">Sıfırla</button>` : ''}
+    </div>`
+    + (gosterilecek.length
         ? ['sorun','yakin','eksik','iyi'].map(grup).join('')
-        : '<div class="bBos">Bildirim yok.</div>');
+        : `<div class="bBos">${bildirimler.length ? 'Okunmamış bildirim yok.' : 'Bildirim yok.'}
+           ${okunmusSayi ? '<br><span class="mini">Durum değişirse yeniden görünürler.</span>' : ''}</div>`);
+}
+async function hepsiniOkunduSay(){
+  const yeni = bildirimler.filter(x => !x.okundu);
+  if(!yeni.length) return;
+  const r = await sb.from('bildirim_okundu').upsert(
+    yeni.map(x => ({anahtar: x.anahtar})), {onConflict:'anahtar'});
+  if(r.error){ alert(r.error.message); return; }
+  const {data} = await sb.from('bildirim_okundu').select('anahtar');
+  D.okunanBildirim = data || [];
+  cizBildirimler();
+  $('#bildirimPanel')?.classList.remove('hide');
+}
+function okunmuslariAcKapa(){
+  okunmusGoster = !okunmusGoster;
+  cizBildirimler();
+  $('#bildirimPanel')?.classList.remove('hide');
+}
+async function okunduSifirla(){
+  await sb.from('bildirim_okundu').delete().neq('anahtar','');
+  D.okunanBildirim = [];
+  okunmusGoster = false;
+  cizBildirimler();
+  $('#bildirimPanel')?.classList.remove('hide');
 }
 function bildirimGit(i){
   bildirimPaneliKapat();
