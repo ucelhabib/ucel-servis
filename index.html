@@ -336,6 +336,9 @@ tbody tr:hover{background:#f7f9fc}
     <div class="mini" id="girisDurum">Yükleniyor…</div>
 
     <form id="girisForm" class="hide" style="text-align:left;margin-top:6px">
+      <div class="mesaj bilgi" style="font-size:13px">Normalde burayı hiç görmezsin —
+      giriş, yer imindeki bağlantıyla kendiliğinden yapılır. Bu ekranı görüyorsan ya
+      bağlantıyı kaybettin ya da başka bir tarayıcıdasın. Yedek yol olarak parola da çalışır.</div>
       <div class="alan"><label>E-posta</label>
         <input type="email" id="gEposta" autocomplete="username" required></div>
       <div class="alan"><label>Parola</label>
@@ -596,11 +599,10 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.5';
+const SURUM = '3.6';
 const SURUM_TARIH = '2026-09-02';
-const SURUM_NOTU = 'Fiyat kaynağının kendi güncelleme tarihi de kaydediliyor: çekiliş tarihi ile '
-                 + 'fiyatın tarihi ayrı görünüyor, kaynak 3 günden fazla güncellemezse uyarı çıkıyor. '
-                 + 'Bildirimlerde tümünü okundu say ve fiyat değişim yüzdesi de bu sürümde.';
+const SURUM_NOTU = 'Parolasız giriş: yer imindeki bağlantıyla kendiliğinden açılıyor, parola sorulmuyor. '
+                 + 'Parola ile giriş yedek yol olarak duruyor.';
 const SB_URL = 'https://dyebjvcfonuuwkenryjf.supabase.co';
 const SB_KEY = 'sb_publishable_kgh6qnRweff8MeXPIh-cZw_sG3hqvtx';
 /* Bazı önizleme/sandbox ortamları fetch çağrısını postMessage ile taşıyor ve
@@ -791,7 +793,53 @@ async function baglantiTesti(hedef){
   if(btn) btn.disabled = false;
 }
 
-/* ================= GİRİŞ ================= */
+/* ================= GİRİŞ =================
+   Parolasız giriş: uzun bir anahtar adres satırından (?a=...) bir kez geliyor,
+   tarayıcıya yazılıyor ve bir daha hiçbir şey sorulmuyor. Anahtar depoda değil,
+   yalnızca veritabanında ve senin tarayıcında duruyor. Parola ile giriş de
+   çalışmaya devam ediyor — anahtarı kaybedersen yedek yol olarak kalsın diye. */
+const ANAHTAR_KUTU = 'ucel-servis-anahtar';
+
+function anahtarOku(){
+  try{
+    const url = new URLSearchParams(location.search).get('a');
+    if(url && url.length >= 32){
+      localStorage.setItem(ANAHTAR_KUTU, url);
+      // anahtar adres çubuğunda durmasın: omuz üstünden okunmasın, geçmişe yazılmasın
+      history.replaceState(null, '', location.pathname + location.hash);
+      return url;
+    }
+    return localStorage.getItem(ANAHTAR_KUTU) || null;
+  }catch(e){ return null; }
+}
+function anahtarSil(){ try{ localStorage.removeItem(ANAHTAR_KUTU); }catch(e){} }
+
+async function anahtarlaGir(){
+  const kod = anahtarOku();
+  if(!kod) return { ok:false, anahtarVar:false };
+  try{
+    const r = await guvenliFetch(`${SB_URL}/functions/v1/giris`, {
+      method:'POST', headers:{'Content-Type':'application/json','apikey':SB_KEY},
+      body: JSON.stringify({kod})
+    });
+    const j = await r.json();
+    if(!j.ok){
+      if(r.status === 401) anahtarSil();   // geçersiz anahtarla her açılışta uğraşmayalım
+      return { ok:false, anahtarVar:true,
+        hata: r.status === 401
+          ? 'Giriş anahtarın geçersiz ya da iptal edilmiş. Yeni bağlantıyı iste.'
+          : ('Giriş yapılamadı: ' + esc(j.hata || 'bilinmeyen hata')) };
+    }
+    const { data, error } = await sb.auth.verifyOtp({
+      email: j.eposta, token_hash: j.token_hash, type: 'magiclink' });
+    if(error) return { ok:false, anahtarVar:true, hata:'Oturum açılamadı: ' + esc(error.message) };
+    return { ok:true, session: data.session };
+  }catch(e){
+    return { ok:false, anahtarVar:true,
+      hata:'Sunucuya ulaşılamadı: ' + esc(String(e && e.message || e)) };
+  }
+}
+
 function girisEkrani(mesajTuru, metin){
   $('#giris').style.display = 'flex';
   $('#uyg').style.display = 'none';
@@ -829,6 +877,10 @@ $('#kayitForm').addEventListener('submit', async e => {
   }
 });
 $('#cikisBtn').addEventListener('click', async () => {
+  // Anahtar bu tarayıcıda duruyor; çıkış onu da siler, yoksa çıkmış sayılmazsın.
+  if(!confirm('Çıkış yapılsın mı?\n\nBu tarayıcıdaki giriş anahtarı da silinecek. '
+    + 'Tekrar girmek için yer imindeki (?a=... ile biten) bağlantıyı kullanman gerekir.')) return;
+  anahtarSil();
   await sb.auth.signOut();
   location.reload();
 });
@@ -861,8 +913,15 @@ async function baslat(){
       + '<code>cdn.jsdelivr.net</code> adresi engelli olabilir. Bağlantı testiyle kontrol et.');
     return;
   }
-  const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ girisEkrani(); return; }
+  let { data:{ session } } = await sb.auth.getSession();
+  if(!session){
+    // Parolasız giriş: yer imindeki ya da bu tarayıcıda saklı anahtarla dene
+    $('#girisDurum').textContent = 'Giriş yapılıyor…';
+    const sonuc = await anahtarlaGir();
+    if(sonuc.ok){ session = sonuc.session; }
+    else if(sonuc.anahtarVar){ girisEkrani('hata', sonuc.hata); return; }
+    else { girisEkrani(); return; }
+  }
 
   try{
     $('#girisForm').classList.add('hide');
