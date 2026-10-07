@@ -599,7 +599,7 @@ tbody tr:hover{background:#f7f9fc}
 /* =========================================================
    ÜÇEL PERSONEL SERVİSİ
    ========================================================= */
-const SURUM = '3.6';
+const SURUM = '3.7';
 const SURUM_TARIH = '2026-09-02';
 const SURUM_NOTU = 'Parolasız giriş: yer imindeki bağlantıyla kendiliğinden açılıyor, parola sorulmuyor. '
                  + 'Parola ile giriş yedek yol olarak duruyor.';
@@ -2865,17 +2865,42 @@ function cizKontrol(){
 }
 $('#donemSec').addEventListener('change', kontrolTabloCiz);
 
+/* Okuma tarihleri arasındaki iş günü (Pazar hariç tutulmaz; hafta içi sayılır).
+   Tarih yoksa ayarlardaki aylık çalışma günü sayısına düşer. */
+function isGunu(bas, bit){
+  if(!bas || !bit) return null;
+  const a = new Date(bas+'T00:00:00'), b = new Date(bit+'T00:00:00');
+  if(isNaN(a) || isNaN(b) || b < a) return null;
+  let n = 0;
+  for(let g = new Date(a); g <= b; g.setDate(g.getDate()+1)){
+    const h = g.getDay();            // 0 Pazar, 6 Cumartesi
+    if(h !== 0 && h !== 6) n++;
+  }
+  return n || null;
+}
+/* Bir aracın güzergâhına göre bir günde yapması beklenen km (gidiş + dönüş) */
+function aracGunlukPlanKm(aracId){
+  return D.rotalar.filter(r => r.arac_id === aracId)
+                  .reduce((s,r) => s + Number(r.toplam_km||0), 0);
+}
+
 function kontrolTabloCiz(){
   const d = $('#donemSec').value;
   const sat = D.araclar.map(v => ({v, k: D.kontrol.find(x => x.arac_id===v.id && x.donem===d)}));
   const topKm = sat.reduce((s,x)=> s + ((x.k?.bitis_km!=null && x.k?.baslangic_km!=null) ? x.k.bitis_km-x.k.baslangic_km : 0), 0);
   const topTutar = sat.reduce((s,x)=> s + Number(x.k?.yakit_tutar||0), 0);
-  const planKm = D.rotalar.reduce((s,r)=>s+Number(r.toplam_km||0),0)*(D.ayarlar.calisma_gunu_sayisi||22);
+  /* Plan günü: okumaların kapsadığı iş günü varsa onu kullan, yoksa ayarlardaki ay günü.
+     Böylece "35 günlük okuma"yı 22 günlük planla karşılaştırıp yanlış alarm vermiyoruz. */
+  const varsayilanGun = D.ayarlar.calisma_gunu_sayisi||22;
+  const gunler = sat.map(x => isGunu(x.k?.okuma_tarihi, x.k?.bitis_tarihi)).filter(Boolean);
+  const planGun = gunler.length ? Math.round(gunler.reduce((a,b)=>a+b,0)/gunler.length) : varsayilanGun;
+  const gunKaynak = gunler.length ? 'okuma tarihlerinden' : 'ayarlardan';
+  const planKm = D.rotalar.reduce((s,r)=>s+Number(r.toplam_km||0),0)*planGun;
   const planTutar = D.rotalar.reduce((s,r)=>s+Number(r.aylik_maliyet||0),0);
 
   $('#kontrolKutular').innerHTML = `
     <div class="kutu"><div class="et">Gerçekleşen km</div><div class="dg">${sy(topKm,0)}</div>
-      <div class="not">plan ${sy(planKm,0)} km</div></div>
+      <div class="not">plan ${sy(planKm,0)} km · ${planGun} iş günü (${gunKaynak})</div></div>
     <div class="kutu"><div class="et">Yakıt gideri</div><div class="dg">${topTutar?tl(topTutar):'—'}</div>
       <div class="not">plan ${planTutar?tl(planTutar):'—'}</div></div>
     <div class="kutu ${topKm&&planKm&&topKm>planKm*1.2?'vurgulu':''}"><div class="et">Plana göre sapma</div>
@@ -2895,13 +2920,23 @@ function kontrolTabloCiz(){
 
   $('#kontrolTablo').innerHTML = `<thead><tr>
       <th>Plaka</th><th>Yakıt</th><th class="sag">Başlangıç km</th><th class="sag">Bitiş km</th>
-      <th class="sag">Yapılan km</th><th class="sag">Yakıt</th><th class="sag">Tutar</th>
+      <th class="sag">Yapılan km</th><th class="sag">Güzergâh planı</th><th class="sag">Fark</th>
+      <th class="sag">Yakıt</th><th class="sag">Tutar</th>
       <th class="sag">Gerçek tüketim</th><th class="sag">Beklenen</th><th></th></tr></thead><tbody>` +
     sat.map(({v,k}) => {
       const km = (k?.bitis_km!=null && k?.baslangic_km!=null) ? k.bitis_km - k.baslangic_km : null;
       const gercek = (km && k?.yakit_miktar) ? k.yakit_miktar*100/km : null;
       const beklenen = Number(v.tuketim_100km)||0;
       const sapma = (gercek && beklenen) ? gercek/beklenen - 1 : null;
+      /* Güzergâh planı: bu aracın gidiş+dönüş km'si × dönemin iş günü */
+      const gunlukPlan = aracGunlukPlanKm(v.id);
+      const kendiGun = isGunu(k?.okuma_tarihi, k?.bitis_tarihi) || planGun;
+      const vPlan = gunlukPlan ? gunlukPlan*kendiGun : null;
+      const fark = (km!=null && vPlan) ? km - vPlan : null;
+      const farkYuzde = (fark!=null) ? fark/vPlan*100 : null;
+      const farkRenk = (farkYuzde==null) ? ''
+        : (farkYuzde > 20 ? 'color:var(--err);font-weight:700'
+          : (farkYuzde < -20 ? 'color:var(--warn);font-weight:700' : 'color:var(--ok);font-weight:700'));
       return `<tr>
         <td><b>${esc(v.plaka)}</b></td>
         <td><span class="etiket e-${v.yakit}">${YAKIT_AD[v.yakit]}</span></td>
@@ -2912,13 +2947,22 @@ function kontrolTabloCiz(){
           ${k?.bitis_tarihi?`<div class="mini" style="font-weight:400">${trTarih(k.bitis_tarihi)}</div>`
             : (k?.bitis_km!=null?'<div class="mini" style="font-weight:400;color:var(--err)">tarih yok</div>':'')}</td>
         <td class="sag mono"><b>${km!=null?sy(km,0):'—'}</b></td>
+        <td class="sag mono">${vPlan?sy(vPlan,0):'<span class="mini">planda yok</span>'}
+          ${vPlan?`<div class="mini" style="font-weight:400">${sy(gunlukPlan,1)} km/gün × ${kendiGun} gün</div>`:''}</td>
+        <td class="sag mono" style="${farkRenk}">${fark!=null?(fark>0?'+':'')+sy(fark,0):'—'}
+          ${fark!=null?`<div class="mini" style="font-weight:400">${(farkYuzde>0?'+':'')+farkYuzde.toFixed(0)}%</div>`:''}</td>
         <td class="sag mono">${k?.yakit_miktar?sy(k.yakit_miktar,1)+' '+YAKIT_BIRIM[v.yakit]:'—'}</td>
         <td class="sag mono">${k?.yakit_tutar?tl(k.yakit_tutar):'—'}</td>
         <td class="sag mono" style="${sapma>0.15?'color:var(--err);font-weight:700':''}">${gercek?sy(gercek,1):'—'}</td>
         <td class="sag mono mini">${beklenen?sy(beklenen,1):'—'}</td>
         <td class="sag"><button class="btn ikincil kucuk yetki" onclick="okumaDuzenle('${v.id}')">Gir</button></td>
       </tr>`;
-    }).join('') + '</tbody>';
+    }).join('') + '</tbody>'
+    + `<tfoot><tr><td colspan="12" class="mini">
+        <b>Güzergâh planı</b> = aracın işe gidiş + eve dönüş km'si × dönemdeki iş günü.
+        <b>Fark</b> pozitifse araç servis dışında da kullanılmış (ya da güzergâh dışına çıkılmış);
+        negatifse araç plandaki günlerin bir kısmında çıkmamış.
+        %20'den fazla sapma kırmızı, %20'den fazla eksik sarı gösterilir.</td></tr></tfoot>`;
   if(!yazabilir()) $$('.yetki').forEach(b => b.classList.add('hide'));
 }
 function okumaDuzenle(aracId){
